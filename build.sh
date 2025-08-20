@@ -1,0 +1,1 @@
+docker run --rm -v .:/project -w /project rust:latest bash -c "apt-get update && apt-get install -y libdbus-1-dev pkg-config && rustup target add aarch64-unknown-linux-gnu && cargo build --target aarch64-unknown-linux-gnu"
