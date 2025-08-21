@@ -8,3 +8,18 @@ tokio = { version = "1", features = ["full"] }
 btleplug = "0.11"
 futures = "0.3"
 
+# GStreamer関連
+gstreamer = "0.22"
+gstreamer-app = "0.22"
+glib = "0.19"
+
+# オーディオ出力
+cpal = "0.15.3"
+
+# スレッドセーフなバッファ
+ringbuf = "0.3.3"
+
+# 簡単なエラーハンドリング
+anyhow = "1.0"
+bytemuck = "1.23.2"
+
