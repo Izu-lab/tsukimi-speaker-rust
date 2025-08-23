@@ -25,11 +25,9 @@ jobs:
         workload_identity_provider: 'projects/145768118931/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
         # 権限を借用するサービスアカウントのメールアドレス
         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-        create_credentials_file: true
 
-    # 4. rcloneをセットアップ
-    - name: Setup rclone
-      uses: AnimMouse/setup-rclone@v1
+    - name: Install latest rclone
+      run: curl https://rclone.org/install.sh | sudo bash
 
     # 5. rcloneを使ってGoogle Driveにアップロード
     - name: Upload file to Google Drive via rclone
