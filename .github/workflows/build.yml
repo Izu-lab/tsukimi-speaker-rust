@@ -47,7 +47,7 @@ jobs:
 
     # 4. rcloneをセットアップ
     - name: Setup rclone
-      uses: rclone/rclone-action@v1.6.0
+      uses: AnimMouse/setup-rclone@v1
 
     # 5. rcloneを使ってGoogle Driveにアップロード
     - name: Upload files to Google Drive via rclone
