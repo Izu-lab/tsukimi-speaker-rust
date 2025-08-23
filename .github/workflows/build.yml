@@ -29,6 +29,9 @@ jobs:
     - name: Install latest rclone
       run: curl https://rclone.org/install.sh | sudo bash
 
+    - name: Check rclone version
+      run: rclone --version
+
     # 5. rcloneを使ってGoogle Driveにアップロード
     - name: Upload file to Google Drive via rclone
       run: |
