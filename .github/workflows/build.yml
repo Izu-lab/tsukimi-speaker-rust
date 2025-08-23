@@ -31,6 +31,9 @@ jobs:
 
     
 
+    - name: List files in workspace
+      run: ls -R
+
     - name: Upload file to Google Drive via rclone
       run: |
         export RCLONE_CONFIG_GDRIVE_TYPE=drive
