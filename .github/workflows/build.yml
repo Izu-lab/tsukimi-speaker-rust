@@ -36,7 +36,7 @@ jobs:
       run: |
         export RCLONE_CONFIG_GDRIVE_TYPE=drive
         export RCLONE_CONFIG_GDRIVE_SCOPE=drive
-        export RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_FILE=${{ steps.auth.outputs.credentials_file_path }}
         export RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        ACCESS_TOKEN=$(gcloud auth print-access-token)
         DATETIME=$(date +'%Y-%m-%d_%H-%M-%S')
-        rclone copyto ./target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker gdrive:${DATETIME}_tsukimi-speaker --drive-impersonate ${{ secrets.GCP_SERVICE_ACCOUNT }} --verbose
+        rclone copyto ./target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker gdrive:${DATETIME}_tsukimi-speaker --drive-access-token "$ACCESS_TOKEN" --verbose
