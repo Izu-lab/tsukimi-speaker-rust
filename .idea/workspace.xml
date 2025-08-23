@@ -11,8 +11,474 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: RUST版スピーカーのテスト">
+    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: 並行処理">
+      <change afterPath="$PROJECT_DIR$/src/build.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/.rustc_info.json" beforeDir="false" afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/CACHEDIR.TAG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.cargo-lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bitflags-aae27b6a91219f70/dep-lib-bitflags" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bitflags-aae27b6a91219f70/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bitflags-aae27b6a91219f70/lib-bitflags" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bitflags-aae27b6a91219f70/lib-bitflags.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-async-3fed01f36be4a8bc/dep-lib-bluez_async" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-async-3fed01f36be4a8bc/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-async-3fed01f36be4a8bc/lib-bluez_async" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-async-3fed01f36be4a8bc/lib-bluez_async.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-generated-73d4ae6a8a34124c/dep-lib-bluez_generated" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-generated-73d4ae6a8a34124c/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-generated-73d4ae6a8a34124c/lib-bluez_generated" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bluez-generated-73d4ae6a8a34124c/lib-bluez_generated.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/btleplug-f563f84f1ce26a89/dep-lib-btleplug" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/btleplug-f563f84f1ce26a89/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/btleplug-f563f84f1ce26a89/lib-btleplug" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/btleplug-f563f84f1ce26a89/lib-btleplug.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bytes-f16903aa05879eba/dep-lib-bytes" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bytes-f16903aa05879eba/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bytes-f16903aa05879eba/lib-bytes" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/bytes-f16903aa05879eba/lib-bytes.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/cfg-if-323ec1a793390873/dep-lib-cfg_if" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/cfg-if-323ec1a793390873/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/cfg-if-323ec1a793390873/lib-cfg_if" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/cfg-if-323ec1a793390873/lib-cfg_if.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-53b37d99ed17c43d/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-53b37d99ed17c43d/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-f4c6cd60b59f316b/dep-lib-crossbeam_utils" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-f4c6cd60b59f316b/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-f4c6cd60b59f316b/lib-crossbeam_utils" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/crossbeam-utils-f4c6cd60b59f316b/lib-crossbeam_utils.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dashmap-6c7f01b6c9ac3ad6/dep-lib-dashmap" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dashmap-6c7f01b6c9ac3ad6/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dashmap-6c7f01b6c9ac3ad6/lib-dashmap" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dashmap-6c7f01b6c9ac3ad6/lib-dashmap.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-906ae833e889c1ad/dep-lib-dbus" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-906ae833e889c1ad/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-906ae833e889c1ad/lib-dbus" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-906ae833e889c1ad/lib-dbus.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-tokio-348f6267d4b1c8da/dep-lib-dbus_tokio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-tokio-348f6267d4b1c8da/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-tokio-348f6267d4b1c8da/lib-dbus_tokio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/dbus-tokio-348f6267d4b1c8da/lib-dbus_tokio.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/either-f79ab3175a56e9d3/dep-lib-either" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/either-f79ab3175a56e9d3/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/either-f79ab3175a56e9d3/lib-either" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/either-f79ab3175a56e9d3/lib-either.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-2cf7b17a4c91785b/dep-lib-futures" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-2cf7b17a4c91785b/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-2cf7b17a4c91785b/lib-futures" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-2cf7b17a4c91785b/lib-futures.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-channel-7d6a39b9a6e624a1/dep-lib-futures_channel" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-channel-7d6a39b9a6e624a1/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-channel-7d6a39b9a6e624a1/lib-futures_channel" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-channel-7d6a39b9a6e624a1/lib-futures_channel.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-core-3a94596637490a2b/dep-lib-futures_core" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-core-3a94596637490a2b/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-core-3a94596637490a2b/lib-futures_core" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-core-3a94596637490a2b/lib-futures_core.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-executor-628eee962520cc16/dep-lib-futures_executor" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-executor-628eee962520cc16/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-executor-628eee962520cc16/lib-futures_executor" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-executor-628eee962520cc16/lib-futures_executor.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-io-39d28a2cd8dd9412/dep-lib-futures_io" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-io-39d28a2cd8dd9412/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-io-39d28a2cd8dd9412/lib-futures_io" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-io-39d28a2cd8dd9412/lib-futures_io.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-sink-18a069886997ae64/dep-lib-futures_sink" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-sink-18a069886997ae64/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-sink-18a069886997ae64/lib-futures_sink" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-sink-18a069886997ae64/lib-futures_sink.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-task-737c2c782c84cd69/dep-lib-futures_task" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-task-737c2c782c84cd69/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-task-737c2c782c84cd69/lib-futures_task" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-task-737c2c782c84cd69/lib-futures_task.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-util-f255d3348ffbb388/dep-lib-futures_util" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-util-f255d3348ffbb388/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-util-f255d3348ffbb388/lib-futures_util" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/futures-util-f255d3348ffbb388/lib-futures_util.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/hashbrown-f14688ccdad217ee/dep-lib-hashbrown" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/hashbrown-f14688ccdad217ee/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/hashbrown-f14688ccdad217ee/lib-hashbrown" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/hashbrown-f14688ccdad217ee/lib-hashbrown.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/itertools-b99cb40cd56f609a/dep-lib-itertools" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/itertools-b99cb40cd56f609a/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/itertools-b99cb40cd56f609a/lib-itertools" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/itertools-b99cb40cd56f609a/lib-itertools.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-71063c5f84f4d68f/dep-lib-libc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-71063c5f84f4d68f/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-71063c5f84f4d68f/lib-libc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-71063c5f84f4d68f/lib-libc.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-9a81c90ff251713e/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libc-9a81c90ff251713e/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-323b4c23e97e7d54/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-323b4c23e97e7d54/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-eb91c282188d18ab/dep-lib-libdbus_sys" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-eb91c282188d18ab/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-eb91c282188d18ab/lib-libdbus_sys" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/libdbus-sys-eb91c282188d18ab/lib-libdbus_sys.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-89e32c6877860ff9/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-89e32c6877860ff9/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-ec28c9bad8e2fa13/dep-lib-lock_api" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-ec28c9bad8e2fa13/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-ec28c9bad8e2fa13/lib-lock_api" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/lock_api-ec28c9bad8e2fa13/lib-lock_api.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/log-d2d08300a8bf901c/dep-lib-log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/log-d2d08300a8bf901c/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/log-d2d08300a8bf901c/lib-log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/log-d2d08300a8bf901c/lib-log.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/memchr-f5d414c392f90398/dep-lib-memchr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/memchr-f5d414c392f90398/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/memchr-f5d414c392f90398/lib-memchr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/memchr-f5d414c392f90398/lib-memchr.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/mio-c089e771d4352711/dep-lib-mio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/mio-c089e771d4352711/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/mio-c089e771d4352711/lib-mio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/mio-c089e771d4352711/lib-mio.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/once_cell-3589b225717c9107/dep-lib-once_cell" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/once_cell-3589b225717c9107/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/once_cell-3589b225717c9107/lib-once_cell" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/once_cell-3589b225717c9107/lib-once_cell.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot-c2416b2ab57467a3/dep-lib-parking_lot" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot-c2416b2ab57467a3/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot-c2416b2ab57467a3/lib-parking_lot" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot-c2416b2ab57467a3/lib-parking_lot.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-73eb610c2cfdd7a0/dep-lib-parking_lot_core" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-73eb610c2cfdd7a0/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-73eb610c2cfdd7a0/lib-parking_lot_core" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-73eb610c2cfdd7a0/lib-parking_lot_core.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-98cbc9e509e53e10/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/parking_lot_core-98cbc9e509e53e10/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-project-lite-cf16ffcd7ce10d21/dep-lib-pin_project_lite" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-project-lite-cf16ffcd7ce10d21/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-project-lite-cf16ffcd7ce10d21/lib-pin_project_lite" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-project-lite-cf16ffcd7ce10d21/lib-pin_project_lite.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-utils-db7a44125d201816/dep-lib-pin_utils" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-utils-db7a44125d201816/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-utils-db7a44125d201816/lib-pin_utils" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/pin-utils-db7a44125d201816/lib-pin_utils.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/scopeguard-495c0bf7bd2ca899/dep-lib-scopeguard" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/scopeguard-495c0bf7bd2ca899/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/scopeguard-495c0bf7bd2ca899/lib-scopeguard" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/scopeguard-495c0bf7bd2ca899/lib-scopeguard.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-0ab35a5ddc3a0c2f/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-0ab35a5ddc3a0c2f/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-4d2b030798a99a20/dep-lib-serde" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-4d2b030798a99a20/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-4d2b030798a99a20/lib-serde" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-4d2b030798a99a20/lib-serde.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-xml-rs-e239d460b39dc73a/dep-lib-serde_xml_rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-xml-rs-e239d460b39dc73a/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-xml-rs-e239d460b39dc73a/lib-serde_xml_rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/serde-xml-rs-e239d460b39dc73a/lib-serde_xml_rs.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/signal-hook-registry-c6b5b33856e7f7ff/dep-lib-signal_hook_registry" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/signal-hook-registry-c6b5b33856e7f7ff/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/signal-hook-registry-c6b5b33856e7f7ff/lib-signal_hook_registry" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/signal-hook-registry-c6b5b33856e7f7ff/lib-signal_hook_registry.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/slab-5972aca542982a1e/dep-lib-slab" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/slab-5972aca542982a1e/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/slab-5972aca542982a1e/lib-slab" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/slab-5972aca542982a1e/lib-slab.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/smallvec-9672678053b11e99/dep-lib-smallvec" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/smallvec-9672678053b11e99/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/smallvec-9672678053b11e99/lib-smallvec" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/smallvec-9672678053b11e99/lib-smallvec.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/socket2-1386340290658709/dep-lib-socket2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/socket2-1386340290658709/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/socket2-1386340290658709/lib-socket2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/socket2-1386340290658709/lib-socket2.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/static_assertions-da4f9208143ca0ba/dep-lib-static_assertions" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/static_assertions-da4f9208143ca0ba/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/static_assertions-da4f9208143ca0ba/lib-static_assertions" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/static_assertions-da4f9208143ca0ba/lib-static_assertions.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-0e70cbefc11dc2f9/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-0e70cbefc11dc2f9/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-13dbc26d940e559c/run-build-script-build-script-build" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-13dbc26d940e559c/run-build-script-build-script-build.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-3ee2374762310989/dep-lib-thiserror" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-3ee2374762310989/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-3ee2374762310989/lib-thiserror" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-3ee2374762310989/lib-thiserror.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-d9d7259ebdb79d96/dep-lib-thiserror" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-d9d7259ebdb79d96/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-d9d7259ebdb79d96/lib-thiserror" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/thiserror-d9d7259ebdb79d96/lib-thiserror.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-fadf6bac464d5914/dep-lib-tokio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-fadf6bac464d5914/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-fadf6bac464d5914/lib-tokio" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-fadf6bac464d5914/lib-tokio.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-stream-c7271dd2137bd2e1/dep-lib-tokio_stream" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-stream-c7271dd2137bd2e1/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-stream-c7271dd2137bd2e1/lib-tokio_stream" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-stream-c7271dd2137bd2e1/lib-tokio_stream.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-util-39f63a14e9d3019a/dep-lib-tokio_util" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-util-39f63a14e9d3019a/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-util-39f63a14e9d3019a/lib-tokio_util" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tokio-util-39f63a14e9d3019a/lib-tokio_util.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tsukimi-speaker-1323bc5e3420d477/bin-tsukimi-speaker" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tsukimi-speaker-1323bc5e3420d477/bin-tsukimi-speaker.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tsukimi-speaker-1323bc5e3420d477/dep-bin-tsukimi-speaker" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/tsukimi-speaker-1323bc5e3420d477/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/uuid-4e090bc9855a114f/dep-lib-uuid" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/uuid-4e090bc9855a114f/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/uuid-4e090bc9855a114f/lib-uuid" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/uuid-4e090bc9855a114f/lib-uuid.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/xml-rs-0c200670b231a521/dep-lib-xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/xml-rs-0c200670b231a521/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/xml-rs-0c200670b231a521/lib-xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.fingerprint/xml-rs-0c200670b231a521/lib-xml.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/crossbeam-utils-53b37d99ed17c43d/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/crossbeam-utils-53b37d99ed17c43d/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/crossbeam-utils-53b37d99ed17c43d/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/crossbeam-utils-53b37d99ed17c43d/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libc-9a81c90ff251713e/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libc-9a81c90ff251713e/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libc-9a81c90ff251713e/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libc-9a81c90ff251713e/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libdbus-sys-323b4c23e97e7d54/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libdbus-sys-323b4c23e97e7d54/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libdbus-sys-323b4c23e97e7d54/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/libdbus-sys-323b4c23e97e7d54/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/lock_api-89e32c6877860ff9/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/lock_api-89e32c6877860ff9/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/lock_api-89e32c6877860ff9/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/lock_api-89e32c6877860ff9/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/parking_lot_core-98cbc9e509e53e10/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/parking_lot_core-98cbc9e509e53e10/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/parking_lot_core-98cbc9e509e53e10/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/parking_lot_core-98cbc9e509e53e10/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/serde-0ab35a5ddc3a0c2f/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/serde-0ab35a5ddc3a0c2f/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/serde-0ab35a5ddc3a0c2f/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/serde-0ab35a5ddc3a0c2f/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-0e70cbefc11dc2f9/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-0e70cbefc11dc2f9/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-0e70cbefc11dc2f9/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-0e70cbefc11dc2f9/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-13dbc26d940e559c/invoked.timestamp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-13dbc26d940e559c/output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-13dbc26d940e559c/root-output" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/build/thiserror-13dbc26d940e559c/stderr" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/bitflags-aae27b6a91219f70.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/bluez_async-3fed01f36be4a8bc.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/bluez_generated-73d4ae6a8a34124c.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/btleplug-f563f84f1ce26a89.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/bytes-f16903aa05879eba.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/cfg_if-323ec1a793390873.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/crossbeam_utils-f4c6cd60b59f316b.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/dashmap-6c7f01b6c9ac3ad6.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/dbus-906ae833e889c1ad.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/dbus_tokio-348f6267d4b1c8da.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/either-f79ab3175a56e9d3.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures-2cf7b17a4c91785b.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_channel-7d6a39b9a6e624a1.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_core-3a94596637490a2b.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_executor-628eee962520cc16.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_io-39d28a2cd8dd9412.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_sink-18a069886997ae64.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_task-737c2c782c84cd69.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/futures_util-f255d3348ffbb388.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/hashbrown-f14688ccdad217ee.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/itertools-b99cb40cd56f609a.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbitflags-aae27b6a91219f70.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbitflags-aae27b6a91219f70.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbluez_async-3fed01f36be4a8bc.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbluez_async-3fed01f36be4a8bc.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbluez_generated-73d4ae6a8a34124c.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbluez_generated-73d4ae6a8a34124c.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbtleplug-f563f84f1ce26a89.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbtleplug-f563f84f1ce26a89.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbytes-f16903aa05879eba.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libbytes-f16903aa05879eba.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libc-71063c5f84f4d68f.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libcfg_if-323ec1a793390873.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libcfg_if-323ec1a793390873.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libcrossbeam_utils-f4c6cd60b59f316b.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libcrossbeam_utils-f4c6cd60b59f316b.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdashmap-6c7f01b6c9ac3ad6.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdashmap-6c7f01b6c9ac3ad6.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdbus-906ae833e889c1ad.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdbus-906ae833e889c1ad.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdbus_sys-eb91c282188d18ab.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdbus_tokio-348f6267d4b1c8da.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libdbus_tokio-348f6267d4b1c8da.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libeither-f79ab3175a56e9d3.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libeither-f79ab3175a56e9d3.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures-2cf7b17a4c91785b.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures-2cf7b17a4c91785b.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_channel-7d6a39b9a6e624a1.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_channel-7d6a39b9a6e624a1.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_core-3a94596637490a2b.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_core-3a94596637490a2b.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_executor-628eee962520cc16.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_executor-628eee962520cc16.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_io-39d28a2cd8dd9412.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_io-39d28a2cd8dd9412.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_sink-18a069886997ae64.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_sink-18a069886997ae64.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_task-737c2c782c84cd69.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_task-737c2c782c84cd69.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_util-f255d3348ffbb388.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libfutures_util-f255d3348ffbb388.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libhashbrown-f14688ccdad217ee.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libhashbrown-f14688ccdad217ee.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libitertools-b99cb40cd56f609a.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libitertools-b99cb40cd56f609a.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblibc-71063c5f84f4d68f.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblibc-71063c5f84f4d68f.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblibdbus_sys-eb91c282188d18ab.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblibdbus_sys-eb91c282188d18ab.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblock_api-ec28c9bad8e2fa13.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblock_api-ec28c9bad8e2fa13.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblog-d2d08300a8bf901c.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/liblog-d2d08300a8bf901c.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libmemchr-f5d414c392f90398.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libmemchr-f5d414c392f90398.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libmio-c089e771d4352711.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libmio-c089e771d4352711.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libonce_cell-3589b225717c9107.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libonce_cell-3589b225717c9107.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libparking_lot-c2416b2ab57467a3.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libparking_lot-c2416b2ab57467a3.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libparking_lot_core-73eb610c2cfdd7a0.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libparking_lot_core-73eb610c2cfdd7a0.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libpin_project_lite-cf16ffcd7ce10d21.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libpin_project_lite-cf16ffcd7ce10d21.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libpin_utils-db7a44125d201816.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libpin_utils-db7a44125d201816.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libscopeguard-495c0bf7bd2ca899.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libscopeguard-495c0bf7bd2ca899.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libserde-4d2b030798a99a20.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libserde-4d2b030798a99a20.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libserde_xml_rs-e239d460b39dc73a.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libserde_xml_rs-e239d460b39dc73a.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsignal_hook_registry-c6b5b33856e7f7ff.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsignal_hook_registry-c6b5b33856e7f7ff.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libslab-5972aca542982a1e.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libslab-5972aca542982a1e.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsmallvec-9672678053b11e99.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsmallvec-9672678053b11e99.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsocket2-1386340290658709.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libsocket2-1386340290658709.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libstatic_assertions-da4f9208143ca0ba.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libstatic_assertions-da4f9208143ca0ba.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libthiserror-3ee2374762310989.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libthiserror-3ee2374762310989.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libthiserror-d9d7259ebdb79d96.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libthiserror-d9d7259ebdb79d96.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio-fadf6bac464d5914.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio-fadf6bac464d5914.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio_stream-c7271dd2137bd2e1.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio_stream-c7271dd2137bd2e1.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio_util-39f63a14e9d3019a.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libtokio_util-39f63a14e9d3019a.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libuuid-4e090bc9855a114f.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libuuid-4e090bc9855a114f.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libxml-0c200670b231a521.rlib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/libxml-0c200670b231a521.rmeta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/lock_api-ec28c9bad8e2fa13.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/log-d2d08300a8bf901c.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/memchr-f5d414c392f90398.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/mio-c089e771d4352711.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/once_cell-3589b225717c9107.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/parking_lot-c2416b2ab57467a3.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/parking_lot_core-73eb610c2cfdd7a0.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/pin_project_lite-cf16ffcd7ce10d21.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/pin_utils-db7a44125d201816.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/scopeguard-495c0bf7bd2ca899.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/serde-4d2b030798a99a20.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/serde_xml_rs-e239d460b39dc73a.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/signal_hook_registry-c6b5b33856e7f7ff.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/slab-5972aca542982a1e.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/smallvec-9672678053b11e99.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/socket2-1386340290658709.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/static_assertions-da4f9208143ca0ba.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/thiserror-3ee2374762310989.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/thiserror-d9d7259ebdb79d96.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/tokio-fadf6bac464d5914.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/tokio_stream-c7271dd2137bd2e1.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/tokio_util-39f63a14e9d3019a.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/tsukimi_speaker-1323bc5e3420d477" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/tsukimi_speaker-1323bc5e3420d477.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/uuid-4e090bc9855a114f.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/deps/xml-0c200670b231a521.d" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/0r0ce4f3mkke40q79mmnyq279.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/0rbiz4v3ztbuekqb1suf4kshk.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/0vz6zpg4bfqdeaauzavzvf6f5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/0x9gisqsibgozgh46txu594y3.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/0z21ewypiygwplnyvw1ov93z4.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/1i8uduphxgejgonart21p8c26.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/1ujqjwrkzkrqlwz7im1j6p6mo.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/22os68u96xiwuzb09q6a4aqtq.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/2aehfkz5q3iuc1wr4sirnzo2j.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/2qpd9tghdtyan8fgzkjgpafxr.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/2w9i7bdgk8dli9qb209lrwitw.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/38ilpl49mpihag0qwyrpso9uy.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/3lyj54ocsb4c9q45ddn0ve5n1.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/48gnt6343415kgi1t4qu564mh.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4ckfj9ia4e1xjb6yx9cy12eva.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4fzhbjwk6cicr9rmgajatd1s5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4ldheh1ytkwvtzkeoc9bjt7wz.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4mlph034dxdezefto34s5brxf.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4mwnlevgixpl8hysby898p11s.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4rrkaux5nlg2u6tnglbug1kyw.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4swhgt49txs47mzodz0d3mas0.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4wk7iivo3npioxph22lcsjnwz.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4zhuuumpsujqifzbtu6fs7jbz.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/4zt3a4mg5unw5gke11c39wzvi.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/57nmvtqcykyguuq8uidl7ozg4.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/58832e5upxg3syakd3h3dtg13.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/58rzwdurznu8rrml1dzb7870q.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/5wna1probfa3s6facgdtgty5n.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/6gnx2njx3caxpu9zc3tzbyazy.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/6h8swux3xm6qx2d9f0ox1bsi5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/6ntkay6v2w7p2z7n0uzuveixg.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/6swli7bvrsvvk67bab8u14imi.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/6x2whkg7ebjthcle7pi2woxb5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/754ds964d5kxitdwfr7mbf36s.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/767yeawu4pyxx6ipaf85n24tj.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/7humbrz59wly5gn2pyf3j22uf.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/7nio9i2vcokwkjr9w68nvn5ce.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/89gg8fpmcbganosycq1ilrcun.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/8dnmydipmnjfue4p3vbxfvx6q.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/8n6ejpyy2yn25q2siouvfehka.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/8oh3v68ohd8dr1orsmltnrhza.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/9o3wjsnsx1qpdc7wrgcua7wk2.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/9p7g3l5r7ts0oq3015zidvfz8.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/ajt56p9dobvcwy0dmxpee9m1k.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/am4ybn0s6554n7pmam1xiqxiw.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/ank4darv0gmvuxllydvi1yyiw.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/ay5n5cecgchju26qssyxuzxp5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/b2j5h5p6dxdkt39ohdkyoosyv.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/b2t7enfe7ow3l7oxah7s1f1c9.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/b42cphx8kdlia0x5qzfazfl5r.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/b4ywjrxcdhnlyj6zggcscm3ff.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/b6vqazmhv6pyxdr9w9b38qtn0.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/btknepzlvhi514fadckqkde6u.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/bu77tbvaaflkg5dxc0uavsqa3.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/bx8hr00v5zi6b2m8v4fuuw1fk.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/cerxbiomowbhc8x31753lkadu.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/cfgv3ipkuknz3zqkrk640vto1.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/cjk7go9ewn92avt1z2dkf22w2.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/cyvgzlyutij2fuyf6s9dfx3z8.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/dep-graph.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/dftdscjiaq7gg9t0k6set6chi.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/drg781taskcyxsu2p186dtk44.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/dvlof9bgnfv8kav6b3pskvcqz.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/dxkqg5arxkq5z7kh6yet6zdk5.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/e06ayhbtiwtitmr44njz6x0am.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/e2rn7bu1i39unvltm4tqcjbse.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/eb8buih2m3w05akjwv8ftyn1a.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/ei73xxwjex53rc41ies8fw2z4.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/eo0ku3qio3zzlufwo9maywntu.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/erbysy7ljfafpu4qkrdxb9x6g.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/f0dpu6j1sdqot18tf1vnimsd4.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/f4djbkg5wyhgdp0hm4n0sjt0h.o" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/query-cache.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs-en79tjz0u0lq1sfj02xza2cuo/work-products.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/incremental/tsukimi_speaker-1hzjp82eeabzh/s-hach9p7068-0mmjycs.lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker.d" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,11 +492,21 @@
     </option>
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:dev" />
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="fUltRvwU" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
@@ -40,26 +516,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Cargo.Run.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "SHELLCHECK.PATH": "/Users/kaido-atsuya/Library/Application Support/JetBrains/RustRover2025.2/plugins/Shell Script/shellcheck",
-    "git-widget-placeholder": "main",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
-    "org.rust.first.attach.projects": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Run.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;/Users/kaido-atsuya/Library/Application Support/JetBrains/RustRover2025.2/plugins/Shell Script/shellcheck&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.disableDetachedFileInspection/Users/kaido-atsuya/Develop/tsukimi-speaker-rust/src/AudioSystem/audio_main.rs&quot;: &quot;true&quot;,
+    &quot;org.rust.disableDetachedFileInspection/Users/kaido-atsuya/Develop/tsukimi-speaker-rust/src/audio_system.rs&quot;: &quot;true&quot;,
+    &quot;org.rust.disableDetachedFileInspection/Users/kaido-atsuya/Develop/tsukimi-speaker-rust/src/audio_system/audio_main.rs&quot;: &quot;true&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.general&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src" />
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
   <component name="RunManager">
     <configuration name="Run" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
       <option name="buildProfileId" value="dev" />
@@ -91,6 +577,11 @@
       <option name="presentableId" value="Default" />
       <updated>1755603492915</updated>
       <workItem from="1755603495172" duration="3871000" />
+      <workItem from="1755788065583" duration="3540000" />
+      <workItem from="1755915834599" duration="681000" />
+      <workItem from="1755916518556" duration="2930000" />
+      <workItem from="1755928098276" duration="2450000" />
+      <workItem from="1755930563398" duration="3084000" />
     </task>
     <task id="LOCAL-00001" summary="feat: RUST版スピーカーのテスト">
       <option name="closed" value="true" />
@@ -108,7 +599,39 @@
       <option name="project" value="LOCAL" />
       <updated>1755615489812</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="feat: RUST版スピーカーのテスト">
+      <option name="closed" value="true" />
+      <created>1755708583092</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1755708583092</updated>
+    </task>
+    <task id="LOCAL-00004" summary="feat: RUST版スピーカーのテスト">
+      <option name="closed" value="true" />
+      <created>1755708628828</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1755708628828</updated>
+    </task>
+    <task id="LOCAL-00005" summary="feat: RUST版スピーカーのサウンドテスト">
+      <option name="closed" value="true" />
+      <created>1755789307860</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1755789307860</updated>
+    </task>
+    <task id="LOCAL-00006" summary="feat: 並行処理">
+      <option name="closed" value="true" />
+      <created>1755919363874</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1755919363874</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -127,6 +650,12 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="feat: RUST版スピーカーのテスト" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: RUST版スピーカーのテスト" />
+    <MESSAGE value="feat: RUST版スピーカーのサウンドテスト" />
+    <MESSAGE value="feat: 並行処理" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: 並行処理" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
   </component>
 </project>

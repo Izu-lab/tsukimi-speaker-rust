@@ -1,0 +1,64 @@
+name: BUILD
+
+on:
+  push:
+    branches: [ main ]
+
+# OIDCトークンを発行するための権限設定
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-unknown-linux-gnu
+        override: true
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libdbus-1-dev pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libglib2.0-dev libasound2-dev
+
+    - name: Build
+      run: cargo build --target aarch64-unknown-linux-gnu
+
+    # 1. リポジトリのコードをチェックアウト
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2. Google Cloudへの認証 (Workload Identity 連携)
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        # ここにWorkload Identity プールのプロバイダIDを記述
+        workload_identity_provider: 'projects/145768118931/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+        # 権限を借用するサービスアカウントのメールアドレス
+        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+    # 4. rcloneをセットアップ
+    - name: Setup rclone
+      uses: rclone/rclone-action@v1.6.0
+
+    # 5. rcloneを使ってGoogle Driveにアップロード
+    - name: Upload files to Google Drive via rclone
+      # rcloneの設定を環境変数で行う
+      # 認証情報は google-github-actions/auth が自動で設定してくれる
+      # アップロードを実行
+      # "gdrive:" はrcloneの設定名
+      # --drive-impersonate は、サービスアカウントがユーザーの代理として動作するために必要
+      run: |
+        export RCLONE_CONFIG_GDRIVE_TYPE=drive
+        export RCLONE_CONFIG_GDRIVE_SCOPE=drive
+        export RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_FILE=/tmp/gcp_creds.json
+        export RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        rclone copy ./target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker gdrive: --drive-impersonate ${{ secrets.GCP_SERVICE_ACCOUNT }} --verbose
