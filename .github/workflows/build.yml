@@ -25,6 +25,7 @@ jobs:
         workload_identity_provider: 'projects/145768118931/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
         # 権限を借用するサービスアカウントのメールアドレス
         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        create_credentials_file: true
 
     # 4. rcloneをセットアップ
     - name: Setup rclone
@@ -35,7 +36,7 @@ jobs:
       run: |
         export RCLONE_CONFIG_GDRIVE_TYPE=drive
         export RCLONE_CONFIG_GDRIVE_SCOPE=drive
-        export RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_FILE=/tmp/gcp_creds.json
+        export RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_FILE=${{ steps.auth.outputs.credentials_file_path }}
         export RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
         DATETIME=$(date +'%Y-%m-%d_%H-%M-%S')
         rclone copyto ./target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker gdrive:${DATETIME}_tsukimi-speaker --drive-impersonate ${{ secrets.GCP_SERVICE_ACCOUNT }} --verbose
