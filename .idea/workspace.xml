@@ -11,11 +11,20 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: 並行処理">
-      <change afterPath="$PROJECT_DIR$/src/build.rs" afterDir="false" />
+    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: あきらめ">
+      <change afterPath="$PROJECT_DIR$/.gemini/GEMINI.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.gemini/settings.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/connect_system.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/connect_system/connect_main.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/proto.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto/helloworld/helloworld.proto" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/audio_system/audio_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/audio_system/audio_main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/bluetooth_system/bluetooth_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bluetooth_system/bluetooth_main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/build.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/target/.rustc_info.json" beforeDir="false" afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/CACHEDIR.TAG" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/target/aarch64-unknown-linux-gnu/debug/.cargo-lock" beforeDir="false" />
@@ -581,7 +590,11 @@
       <workItem from="1755915834599" duration="681000" />
       <workItem from="1755916518556" duration="2930000" />
       <workItem from="1755928098276" duration="2450000" />
-      <workItem from="1755930563398" duration="3084000" />
+      <workItem from="1755930563398" duration="6433000" />
+      <workItem from="1755941014883" duration="23000" />
+      <workItem from="1757427939190" duration="4070000" />
+      <workItem from="1757517002732" duration="26949000" />
+      <workItem from="1758380232895" duration="6838000" />
     </task>
     <task id="LOCAL-00001" summary="feat: RUST版スピーカーのテスト">
       <option name="closed" value="true" />
@@ -631,7 +644,111 @@
       <option name="project" value="LOCAL" />
       <updated>1755919363874</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="feat: actions">
+      <option name="closed" value="true" />
+      <created>1755936696502</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1755936696502</updated>
+    </task>
+    <task id="LOCAL-00008" summary="feat: なおった？">
+      <option name="closed" value="true" />
+      <created>1755936933057</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1755936933057</updated>
+    </task>
+    <task id="LOCAL-00009" summary="feat: くろすぷらっとふぉーむ！">
+      <option name="closed" value="true" />
+      <created>1755937362122</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1755937362122</updated>
+    </task>
+    <task id="LOCAL-00010" summary="feat: ビルド諦め">
+      <option name="closed" value="true" />
+      <created>1755937847934</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1755937847934</updated>
+    </task>
+    <task id="LOCAL-00011" summary="feat: ファイル作るように">
+      <option name="closed" value="true" />
+      <created>1755938066080</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1755938066080</updated>
+    </task>
+    <task id="LOCAL-00012" summary="feat: アクセストークンを取得するようにしたらしい">
+      <option name="closed" value="true" />
+      <created>1755938210127</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1755938210127</updated>
+    </task>
+    <task id="LOCAL-00013" summary="feat: rcloneってなんなんだろうね">
+      <option name="closed" value="true" />
+      <created>1755938384247</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1755938384247</updated>
+    </task>
+    <task id="LOCAL-00014" summary="feat: バージョン見たいってさ">
+      <option name="closed" value="true" />
+      <created>1755938544775</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1755938544775</updated>
+    </task>
+    <task id="LOCAL-00015" summary="feat: もっかいでばっくだってー">
+      <option name="closed" value="true" />
+      <created>1755938677631</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1755938677631</updated>
+    </task>
+    <task id="LOCAL-00016" summary="feat: ぽい">
+      <option name="closed" value="true" />
+      <created>1755939094285</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1755939094285</updated>
+    </task>
+    <task id="LOCAL-00017" summary="feat: デバック〜">
+      <option name="closed" value="true" />
+      <created>1755939230608</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1755939230608</updated>
+    </task>
+    <task id="LOCAL-00018" summary="feat: なんかアップロードされてなかったわ">
+      <option name="closed" value="true" />
+      <created>1755939785471</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1755939785471</updated>
+    </task>
+    <task id="LOCAL-00019" summary="feat: あきらめ">
+      <option name="closed" value="true" />
+      <created>1755939870022</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1755939870022</updated>
+    </task>
+    <option name="localTasksCounter" value="20" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -652,7 +769,20 @@
     <MESSAGE value="feat: RUST版スピーカーのテスト" />
     <MESSAGE value="feat: RUST版スピーカーのサウンドテスト" />
     <MESSAGE value="feat: 並行処理" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: 並行処理" />
+    <MESSAGE value="feat: actions" />
+    <MESSAGE value="feat: なおった？" />
+    <MESSAGE value="feat: くろすぷらっとふぉーむ！" />
+    <MESSAGE value="feat: ビルド諦め" />
+    <MESSAGE value="feat: ファイル作るように" />
+    <MESSAGE value="feat: アクセストークンを取得するようにしたらしい" />
+    <MESSAGE value="feat: rcloneってなんなんだろうね" />
+    <MESSAGE value="feat: バージョン見たいってさ" />
+    <MESSAGE value="feat: もっかいでばっくだってー" />
+    <MESSAGE value="feat: ぽい" />
+    <MESSAGE value="feat: デバック〜" />
+    <MESSAGE value="feat: なんかアップロードされてなかったわ" />
+    <MESSAGE value="feat: あきらめ" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: あきらめ" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

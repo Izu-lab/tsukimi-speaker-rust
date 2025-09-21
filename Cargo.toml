@@ -1,7 +1,7 @@
 [package]
 name = "tsukimi-speaker"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -22,4 +22,13 @@ ringbuf = "0.3.3"
 # 簡単なエラーハンドリング
 anyhow = "1.0"
 bytemuck = "1.23.2"
+tonic = "0.14.1"
+tonic-prost = "0.14"
+prost = "0.14.1"
+tokio-stream = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[build-dependencies]
+tonic-build = "0.14.2"
+tonic-prost-build = "0.14" # prostベースのコード生成のために追加
 
