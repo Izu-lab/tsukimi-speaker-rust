@@ -3,6 +3,7 @@ use anyhow::{anyhow, Result};
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use futures::stream::StreamExt;
+use log::{debug, error, info, warn};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -11,18 +12,24 @@ use tokio::time;
 pub async fn bluetooth_scanner(
     tx: mpsc::Sender<DeviceInfo>,
 ) -> Result<()> {
+    info!("Starting Bluetooth scanner...");
     let manager = Manager::new().await?;
+    info!("Bluetooth manager created.");
     let adapters = manager.adapters().await?;
     let central = adapters
         .into_iter()
         .nth(0)
         .ok_or_else(|| anyhow!("Bluetooth adapter not found"))?;
 
+    let adapter_info = central.adapter_info().await?;
+    info!("Using Bluetooth adapter: {}", adapter_info);
+
     let mut events = central.events().await?;
-    println!("Scanning for BLE devices...");
+    info!("Scanning for BLE devices...");
     central.start_scan(ScanFilter::default()).await?;
     time::sleep(Duration::from_secs(2)).await;
 
+    info!("Started listening for BLE events.");
     while let Some(event) = events.next().await {
         if let btleplug::api::CentralEvent::DeviceDiscovered(id)
         | btleplug::api::CentralEvent::DeviceUpdated(id) = event
@@ -47,8 +54,9 @@ async fn on_event_receive(
                     rssi,
                     last_seen: Instant::now(),
                 };
+                debug!("Device found: {:?}", &device_info);
                 if let Err(e) = sender.send(device_info).await {
-                    eprintln!("Failed to send device info: {}", e);
+                    error!("Failed to send device info through channel: {}", e);
                 }
             }
         }

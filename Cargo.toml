@@ -22,6 +22,8 @@ ringbuf = "0.3.3"
 # 簡単なエラーハンドリング
 anyhow = "1.0"
 bytemuck = "1.23.2"
+log = "0.4"
+env_logger = "0.10"
 tonic = "0.14.1"
 tonic-prost = "0.14"
 prost = "0.14.1"

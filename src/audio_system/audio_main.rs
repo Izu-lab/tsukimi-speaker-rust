@@ -2,10 +2,12 @@ use crate::DeviceInfo;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use glib::object::Cast;
+use glib::object::ObjectExt;
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use glib::object::ObjectExt;
-use gstreamer_app as gst_app;use ringbuf::HeapRb;
+use gstreamer_app as gst_app;
+use log::{debug, error, info, warn};
+use ringbuf::HeapRb;
 use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc};
 
@@ -13,8 +15,13 @@ pub fn audio_main(
     mut rx: broadcast::Receiver<DeviceInfo>,
     mut time_sync_rx: mpsc::Receiver<String>,
 ) -> Result<()> {
+    info!("Audio system main loop started.");
     // ## 1. GStreamerと共有バッファの初期化 ##
-    gst::init().expect("gstの初期化に失敗");
+    if let Err(e) = gst::init() {
+        error!("Failed to initialize GStreamer: {}", e);
+        return Err(anyhow!("Failed to initialize GStreamer"));
+    }
+    info!("GStreamer initialized successfully.");
 
     // --- ここから追加・変更 ---
     // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
@@ -103,16 +110,22 @@ pub fn audio_main(
             let written = consumer.pop_slice(data);
             data[written..].iter_mut().for_each(|s| *s = 0.0);
         },
-        |err| eprintln!("An error occurred on the output audio stream: {}", err),
+        |err| error!("An error occurred on the output audio stream: {}", err),
         None,
     )?;
+    info!("CPAL output stream built successfully.");
 
-    _stream.play().expect("ストリームの開始に失敗");
+    if let Err(e) = _stream.play() {
+        error!("Failed to start CPAL stream: {}", e);
+        return Err(anyhow!("Failed to start CPAL stream"));
+    }
+    info!("CPAL stream started successfully.");
+
 
     // ## 4. 再生の開始と終了処理 ##
     pipeline.set_state(gst::State::Playing)?;
 
-    println!("再生を開始しました。再生終了まで待機します...");
+    info!("GStreamer pipeline state set to Playing. Waiting for playback to finish...");
 
     let bus = pipeline.bus().unwrap();
     // ## 5. メインループ ##
@@ -124,11 +137,14 @@ pub fn audio_main(
                     MessageView::Eos(_) => {
                         pipeline.set_state(gst::State::Ready)?;
                         current_sound = None;
-                        println!("再生が終了しました。次のデバイスを待っています...");
+                        info!("Playback finished (EOS). Waiting for next device...");
                     }
                     MessageView::Error(err) => {
-                        eprintln!("GStreamer Error: {}", err.error());
-                        eprintln!("Debug info: {:?}", err.debug());
+                        error!(
+                            "GStreamer pipeline error: {}, Debug info: {:?}",
+                            err.error(),
+                            err.debug()
+                        );
                         break 'main_loop;
                     }
                     _ => (),
@@ -147,7 +163,7 @@ pub fn audio_main(
                             let actual_seek_ns = seek_time.nseconds() % duration.nseconds();
                             let actual_seek_time = gst::ClockTime::from_nseconds(actual_seek_ns);
 
-                            println!(
+                            debug!(
                                 "Received seek time: {:?}, Duration: {:?}, Actual seek time: {:?}",
                                 seek_time,
                                 duration,
@@ -159,33 +175,39 @@ pub fn audio_main(
                                 gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
                                 actual_seek_time,
                             ) {
-                                eprintln!("Failed to seek: {}", e);
+                                warn!("Failed to seek in pipeline: {}", e);
                             }
                         } // durationが0の場合はシークしない
                     } else {
                         // durationが取得できない場合は、とりあえずそのままシークしてみる
-                        println!("Seeking to: {:?}", seek_time);
+                        debug!("Seeking to: {:?}", seek_time);
                         if let Err(e) = pipeline.seek_simple(
                             gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
                             seek_time,
                         ) {
-                            eprintln!("Failed to seek: {}", e);
+                            warn!("Failed to seek (no duration): {}", e);
                         }
                     }
                 } else {
-                    eprintln!("Failed to parse time string: {}", time_str);
+                    warn!("Failed to parse time string: {}", time_str);
                 }
             }
 
             // --- Bluetoothデバイス情報の受信と更新 ---
             while let Ok(device_info) = rx.try_recv() {
+                debug!("Received device info: {:?}", device_info);
                 detected_devices.insert(device_info.address.clone(), device_info);
             }
 
             // --- 古いデバイス情報のクリーンアップ ---
             let now = std::time::Instant::now();
             if now.duration_since(last_cleanup) > CLEANUP_INTERVAL {
+                let initial_count = detected_devices.len();
                 detected_devices.retain(|_, device_info| now.duration_since(device_info.last_seen) < CLEANUP_INTERVAL);
+                let final_count = detected_devices.len();
+                if initial_count != final_count {
+                    debug!("Cleaned up {} old devices. {} remaining.", initial_count - final_count, final_count);
+                }
                 last_cleanup = now;
             }
 
@@ -198,7 +220,7 @@ pub fn audio_main(
             if let Some(device) = best_device {
                 if let Some(new_sound) = sound_map.get(&device.address) {
                     if current_sound.as_deref() != Some(new_sound.as_str()) {
-                        println!("Switching sound to {} for device {}", new_sound, device.address);
+                        info!("Switching sound to '{}' for device {}", new_sound, device.address);
                         pipeline.set_state(gst::State::Ready)?;
                         filesrc.set_property("location", new_sound);
                         pipeline.set_state(gst::State::Playing)?;
@@ -209,7 +231,7 @@ pub fn audio_main(
             } else {
                 // sound_mapに登録されたデバイスが1つも見つからない場合
                 if current_sound.is_some() {
-                    println!("No mapped devices found, stopping playback.");
+                    info!("No mapped devices found, stopping playback.");
                     pipeline.set_state(gst::State::Ready)?;
                     current_sound = None;
                 }
@@ -220,6 +242,7 @@ pub fn audio_main(
 
     pipeline.set_state(gst::State::Null)?;
 
+    info!("Audio system main loop finished.");
     Ok(())
 }
 
@@ -233,8 +256,8 @@ fn update_volume_from_rssi(device_info: &DeviceInfo, volume_element: &gst::Eleme
     let mut volume_level = (rssi - MIN_RSSI) / (MAX_RSSI - MIN_RSSI);
     volume_level = volume_level.clamp(0.0, 1.0); // 0.0-1.0の範囲に収める
 
-    println!(
-        "Address: {}, RSSI: {} -> Volume: {:.2}",
+    debug!(
+        "Update volume for device {}: RSSI {} -> Volume {:.2}",
         device_info.address,
         device_info.rssi,
         volume_level
