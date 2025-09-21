@@ -3,21 +3,23 @@ use crate::proto::proto::time_service_client::TimeServiceClient;
 use crate::proto::proto::{StreamDeviceInfoRequest, StreamTimeRequest};
 use crate::DeviceInfo;
 use futures::stream::StreamExt;
-use log::{debug, error, info, warn};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::BroadcastStream;
 use tonic::transport::Channel;
+use tracing::{debug, error, info, instrument};
 
+#[instrument(skip(client, rx))]
 async fn run_device_service_client(
     mut client: DeviceServiceClient<Channel>,
-    rx: broadcast::Receiver<DeviceInfo>,
+    rx: broadcast::Receiver<Arc<DeviceInfo>>,
 ) {
     info!("Starting DeviceService client...");
     let device_info_stream = BroadcastStream::new(rx).filter_map(|result| async move {
         result.ok().map(|info| {
-            debug!("Sending device info to server: {:?}", info);
+            debug!(?info, "Sending device info to server");
             StreamDeviceInfoRequest {
-                id: info.address,
+                id: info.address.clone(), // gRPCメッセージの所有権のためにクローンが必要
                 rssi: info.rssi as i32,
             }
         })
@@ -29,7 +31,7 @@ async fn run_device_service_client(
             let mut stream = response.into_inner();
             while let Some(item) = stream.next().await {
                 match item {
-                    Ok(res) => debug!("DeviceService Response: {}", res.current_time),
+                    Ok(res) => debug!(?res, "DeviceService Response"),
                     Err(e) => error!("DeviceService stream error: {}", e),
                 }
             }
@@ -40,6 +42,7 @@ async fn run_device_service_client(
     }
 }
 
+#[instrument(skip(client, time_sync_tx))]
 async fn run_time_service_client(
     mut client: TimeServiceClient<Channel>,
     time_sync_tx: mpsc::Sender<String>,
@@ -53,8 +56,8 @@ async fn run_time_service_client(
             while let Some(item) = stream.next().await {
                 match item {
                     Ok(res) => {
-                        debug!("Received time from server: {}", res.current_time);
-                        if let Err(e) = time_sync_tx.send(res.current_time).await {
+                        debug!(?res, "Received time from server");
+                        if let Err(e) = time_sync_tx.send(res.current_time.clone()).await {
                             error!("Failed to send time sync data: {}", e);
                         }
                     }
@@ -68,8 +71,9 @@ async fn run_time_service_client(
     }
 }
 
+#[instrument(skip(rx, time_sync_tx))]
 pub async fn connect_main(
-    rx: broadcast::Receiver<DeviceInfo>,
+    rx: broadcast::Receiver<Arc<DeviceInfo>>,
     time_sync_tx: mpsc::Sender<String>,
 ) -> anyhow::Result<()> {
     let server_addr = "http://[::1]:50051";

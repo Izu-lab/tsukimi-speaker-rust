@@ -6,13 +6,15 @@ use glib::object::ObjectExt;
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
-use log::{debug, error, info, warn};
 use ringbuf::HeapRb;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
+use tracing::{debug, error, info, instrument, warn};
 
+#[instrument(skip(rx, time_sync_rx))]
 pub fn audio_main(
-    mut rx: broadcast::Receiver<DeviceInfo>,
+    mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<String>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
@@ -39,7 +41,7 @@ pub fn audio_main(
 
     // 現在再生中のサウンドファイル名を保持
     let mut current_sound = None::<String>;
-    let mut detected_devices = HashMap::<String, DeviceInfo>::new();
+    let mut detected_devices = HashMap::<String, Arc<DeviceInfo>>::new();
     let mut last_cleanup = std::time::Instant::now();
     const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
     // --- ここまで追加・変更 ---
@@ -82,6 +84,7 @@ pub fn audio_main(
     appsink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
             .new_sample(move |sink| {
+                let _span = tracing::debug_span!("gst_new_sample").entered();
                 let sample = sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                 let buffer = sample.buffer().ok_or(gst::FlowError::Error)?;
                 let map = buffer.map_readable().map_err(|_| gst::FlowError::Error)?;
@@ -107,6 +110,7 @@ pub fn audio_main(
     let _stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            let _span = tracing::trace_span!("cpal_output_stream").entered();
             let written = consumer.pop_slice(data);
             data[written..].iter_mut().for_each(|s| *s = 0.0);
         },
@@ -164,10 +168,10 @@ pub fn audio_main(
                             let actual_seek_time = gst::ClockTime::from_nseconds(actual_seek_ns);
 
                             debug!(
-                                "Received seek time: {:?}, Duration: {:?}, Actual seek time: {:?}",
-                                seek_time,
-                                duration,
-                                actual_seek_time
+                                received_seek_time = ?seek_time,
+                                duration = ?duration,
+                                actual_seek_time = ?actual_seek_time,
+                                "Seeking with loop"
                             );
 
                             // 再生位置を更新
@@ -180,7 +184,7 @@ pub fn audio_main(
                         } // durationが0の場合はシークしない
                     } else {
                         // durationが取得できない場合は、とりあえずそのままシークしてみる
-                        debug!("Seeking to: {:?}", seek_time);
+                        debug!(seek_time = ?seek_time, "Seeking without duration");
                         if let Err(e) = pipeline.seek_simple(
                             gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
                             seek_time,
@@ -195,7 +199,7 @@ pub fn audio_main(
 
             // --- Bluetoothデバイス情報の受信と更新 ---
             while let Ok(device_info) = rx.try_recv() {
-                debug!("Received device info: {:?}", device_info);
+                debug!(device = ?device_info, "Received device info");
                 detected_devices.insert(device_info.address.clone(), device_info);
             }
 
@@ -206,7 +210,11 @@ pub fn audio_main(
                 detected_devices.retain(|_, device_info| now.duration_since(device_info.last_seen) < CLEANUP_INTERVAL);
                 let final_count = detected_devices.len();
                 if initial_count != final_count {
-                    debug!("Cleaned up {} old devices. {} remaining.", initial_count - final_count, final_count);
+                    debug!(
+                        cleaned_count = initial_count - final_count,
+                        remaining_count = final_count,
+                        "Cleaned up old devices."
+                    );
                 }
                 last_cleanup = now;
             }
@@ -220,7 +228,11 @@ pub fn audio_main(
             if let Some(device) = best_device {
                 if let Some(new_sound) = sound_map.get(&device.address) {
                     if current_sound.as_deref() != Some(new_sound.as_str()) {
-                        info!("Switching sound to '{}' for device {}", new_sound, device.address);
+                        info!(
+                            new_sound,
+                            device_address = %device.address,
+                            "Switching sound"
+                        );
                         pipeline.set_state(gst::State::Ready)?;
                         filesrc.set_property("location", new_sound);
                         pipeline.set_state(gst::State::Playing)?;
@@ -247,7 +259,8 @@ pub fn audio_main(
 }
 
 /// RSSI値に基づいてGStreamerの音量を更新する
-fn update_volume_from_rssi(device_info: &DeviceInfo, volume_element: &gst::Element) {
+#[instrument(skip(volume_element), fields(device_address = %device_info.address, rssi = device_info.rssi))]
+fn update_volume_from_rssi(device_info: &Arc<DeviceInfo>, volume_element: &gst::Element) {
     // RSSIを音量レベル(0.0-1.0)にマッピング
     let rssi = device_info.rssi as f64;
     const MAX_RSSI: f64 = -40.0; // 音量1.0になるRSSI値
@@ -256,12 +269,7 @@ fn update_volume_from_rssi(device_info: &DeviceInfo, volume_element: &gst::Eleme
     let mut volume_level = (rssi - MIN_RSSI) / (MAX_RSSI - MIN_RSSI);
     volume_level = volume_level.clamp(0.0, 1.0); // 0.0-1.0の範囲に収める
 
-    debug!(
-        "Update volume for device {}: RSSI {} -> Volume {:.2}",
-        device_info.address,
-        device_info.rssi,
-        volume_level
-    );
+    debug!(volume = volume_level, "Update volume");
 
     // GStreamerのvolumeエレメントに音量を設定
     volume_element.set_property("volume", volume_level);
