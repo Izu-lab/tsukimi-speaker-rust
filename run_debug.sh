@@ -5,4 +5,4 @@
 cargo build
 
 # デバッグログを有効にして実行
-RUST_LOG=trace ./target/debug/tsukimi-speaker
+RUST_LOG=info ./target/debug/tsukimi-speaker

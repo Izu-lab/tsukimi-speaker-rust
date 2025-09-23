@@ -24,6 +24,46 @@ async fn main() -> Result<()> {
     // tracingを初期化
     tracing_subscriber::fmt::init();
 
+    info!("Spawning performance monitor task");
+    tokio::spawn(async {
+        use sysinfo::{System, Pid};
+        let mut sys = System::new_all();
+        // 自身のプロセスIDを取得
+        let pid = Pid::from(std::process::id() as usize);
+        loop {
+            // CPU、メモリ、プロセスの情報を更新
+            sys.refresh_cpu();
+            sys.refresh_memory();
+            sys.refresh_process(pid);
+
+            // CPU全体の平均使用率
+            let total_cpu_usage = sys.global_cpu_info().cpu_usage();
+
+            // このプロセスのCPU使用率とメモリ使用量
+            let (process_cpu, process_mem) = if let Some(process) = sys.process(pid) {
+                (process.cpu_usage(), process.memory())
+            } else {
+                (0.0, 0)
+            };
+
+            // システム全体のメモリ使用量
+            let total_mem = sys.total_memory();
+            let used_mem = sys.used_memory();
+
+            tracing::info!(
+                "Perf: [CPU] Total: {:.1}%, Process: {:.1}% | [MEM] System: {:.2}/{:.2} GB, Process: {:.2} MB",
+                total_cpu_usage,
+                process_cpu,
+                used_mem as f64 / 1_073_741_824.0, // GiB
+                total_mem as f64 / 1_073_741_824.0, // GiB
+                process_mem as f64 / 1_048_576.0 // MiB
+            );
+
+            // 5秒待機
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    }.instrument(tracing::info_span!("performance_monitor_task")));
+
     info!("Starting application");
 
     // Bluetoothスキャナからのデータを受け取るためのmpscチャンネル
@@ -59,7 +99,7 @@ async fn main() -> Result<()> {
     );
 
     // 時間同期のためのmpscチャンネル
-    let (time_sync_tx, time_sync_rx) = mpsc::channel::<String>(32);
+    let (time_sync_tx, time_sync_rx) = mpsc::channel::<u64>(32);
 
     // gRPC通信を行うタスク
     info!("Spawning gRPC server task");

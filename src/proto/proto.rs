@@ -8,10 +8,10 @@ pub struct StreamDeviceInfoRequest {
     pub rssi: i32,
 }
 /// サーバーからストリーミングされるメッセージ
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamDeviceInfoResponse {
-    #[prost(string, tag = "1")]
-    pub current_time: ::prost::alloc::string::String,
+    #[prost(int64, tag = "1")]
+    pub elapsed_nanoseconds: i64,
 }
 /// Generated client implementations.
 pub mod device_service_client {
@@ -335,10 +335,10 @@ pub mod device_service_server {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamTimeRequest {}
 /// StreamTimeのレスポンスメッセージ
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamTimeResponse {
-    #[prost(string, tag = "1")]
-    pub current_time: ::prost::alloc::string::String,
+    #[prost(int64, tag = "1")]
+    pub elapsed_nanoseconds: i64,
 }
 /// Generated client implementations.
 pub mod time_service_client {

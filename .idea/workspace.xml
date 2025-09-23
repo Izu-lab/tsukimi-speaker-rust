@@ -11,15 +11,15 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: ログ出力を追加">
+    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: プロファイラーを実装">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/run_debug.sh" beforeDir="false" afterPath="$PROJECT_DIR$/run_debug.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/audio_system/audio_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/audio_system/audio_main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/bluetooth_system/bluetooth_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bluetooth_system/bluetooth_main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/connect_system/connect_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/connect_system/connect_main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/proto/proto.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/proto/proto.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/target/.rustc_info.json" beforeDir="false" afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -128,7 +128,8 @@
       <workItem from="1757427939190" duration="4070000" />
       <workItem from="1757517002732" duration="26949000" />
       <workItem from="1758380232895" duration="7799000" />
-      <workItem from="1758441348573" duration="5301000" />
+      <workItem from="1758441348573" duration="7052000" />
+      <workItem from="1758625867423" duration="2454000" />
     </task>
     <task id="LOCAL-00001" summary="feat: RUST版スピーカーのテスト">
       <option name="closed" value="true" />
@@ -306,7 +307,15 @@
       <option name="project" value="LOCAL" />
       <updated>1758446957921</updated>
     </task>
-    <option name="localTasksCounter" value="23" />
+    <task id="LOCAL-00023" summary="feat: プロファイラーを実装">
+      <option name="closed" value="true" />
+      <created>1758450994850</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1758450994850</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -343,7 +352,8 @@
     <MESSAGE value="feat: 再生同期システムを作成" />
     <MESSAGE value="feat: build.rs" />
     <MESSAGE value="feat: ログ出力を追加" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: ログ出力を追加" />
+    <MESSAGE value="feat: プロファイラーを実装" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: プロファイラーを実装" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

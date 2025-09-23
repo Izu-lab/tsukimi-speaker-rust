@@ -45,7 +45,7 @@ async fn run_device_service_client(
 #[instrument(skip(client, time_sync_tx))]
 async fn run_time_service_client(
     mut client: TimeServiceClient<Channel>,
-    time_sync_tx: mpsc::Sender<String>,
+    time_sync_tx: mpsc::Sender<u64>,
 ) {
     info!("Starting TimeService client...");
     let request = tonic::Request::new(StreamTimeRequest {});
@@ -57,7 +57,7 @@ async fn run_time_service_client(
                 match item {
                     Ok(res) => {
                         debug!(?res, "Received time from server");
-                        if let Err(e) = time_sync_tx.send(res.current_time.clone()).await {
+                        if let Err(e) = time_sync_tx.send(res.elapsed_nanoseconds as u64).await {
                             error!("Failed to send time sync data: {}", e);
                         }
                     }
@@ -74,7 +74,7 @@ async fn run_time_service_client(
 #[instrument(skip(rx, time_sync_tx))]
 pub async fn connect_main(
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
-    time_sync_tx: mpsc::Sender<String>,
+    time_sync_tx: mpsc::Sender<u64>,
 ) -> anyhow::Result<()> {
     let server_addr = "http://[::1]:50051";
     info!("Connecting to gRPC server at {}", server_addr);

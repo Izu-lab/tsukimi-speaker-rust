@@ -15,7 +15,7 @@ use tracing::{debug, error, info, instrument, warn};
 #[instrument(skip(rx, time_sync_rx))]
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
-    mut time_sync_rx: mpsc::Receiver<String>,
+    mut time_sync_rx: mpsc::Receiver<u64>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
     // ## 1. GStreamerと共有バッファの初期化 ##
@@ -156,44 +156,40 @@ pub fn audio_main(
             }
 
             // --- 時間同期情報の受信 ---
-            if let Ok(time_str) = time_sync_rx.try_recv() {
-                if let Ok(time_ns) = time_str.parse::<u64>() {
-                    let seek_time = gst::ClockTime::from_nseconds(time_ns);
+            if let Ok(time_ns) = time_sync_rx.try_recv() {
+                let seek_time = gst::ClockTime::from_nseconds(time_ns);
 
-                    // パイプラインから音源の長さを取得
-                    if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
-                        if duration.nseconds() > 0 {
-                            // シーク時間を音源の長さで割った余りを計算してループさせる
-                            let actual_seek_ns = seek_time.nseconds() % duration.nseconds();
-                            let actual_seek_time = gst::ClockTime::from_nseconds(actual_seek_ns);
+                // パイプラインから音源の長さを取得
+                if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
+                    if duration.nseconds() > 0 {
+                        // シーク時間を音源の長さで割った余りを計算してループさせる
+                        let actual_seek_ns = seek_time.nseconds() % duration.nseconds();
+                        let actual_seek_time = gst::ClockTime::from_nseconds(actual_seek_ns);
 
-                            debug!(
-                                received_seek_time = ?seek_time,
-                                duration = ?duration,
-                                actual_seek_time = ?actual_seek_time,
-                                "Seeking with loop"
-                            );
+                        debug!(
+                            received_seek_time = ?seek_time,
+                            duration = ?duration,
+                            actual_seek_time = ?actual_seek_time,
+                            "Seeking with loop"
+                        );
 
-                            // 再生位置を更新
-                            if let Err(e) = pipeline.seek_simple(
-                                gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                                actual_seek_time,
-                            ) {
-                                warn!("Failed to seek in pipeline: {}", e);
-                            }
-                        } // durationが0の場合はシークしない
-                    } else {
-                        // durationが取得できない場合は、とりあえずそのままシークしてみる
-                        debug!(seek_time = ?seek_time, "Seeking without duration");
+                        // 再生位置を更新
                         if let Err(e) = pipeline.seek_simple(
                             gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                            seek_time,
+                            actual_seek_time,
                         ) {
-                            warn!("Failed to seek (no duration): {}", e);
+                            warn!("Failed to seek in pipeline: {}", e);
                         }
-                    }
+                    } // durationが0の場合はシークしない
                 } else {
-                    warn!("Failed to parse time string: {}", time_str);
+                    // durationが取得できない場合は、とりあえずそのままシークしてみる
+                    debug!(seek_time = ?seek_time, "Seeking without duration");
+                    if let Err(e) = pipeline.seek_simple(
+                        gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
+                        seek_time,
+                    ) {
+                        warn!("Failed to seek (no duration): {}", e);
+                    }
                 }
             }
 
