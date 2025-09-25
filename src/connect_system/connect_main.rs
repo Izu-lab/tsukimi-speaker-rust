@@ -1,4 +1,5 @@
 use crate::proto::proto::device_service_client::DeviceServiceClient;
+use crate::proto::proto::stream_device_info_response::Event;
 use crate::proto::proto::time_service_client::TimeServiceClient;
 use crate::proto::proto::{LocationRssi, StreamDeviceInfoRequest, StreamTimeRequest};
 use crate::DeviceInfo;
@@ -18,9 +19,10 @@ async fn run_device_service_client(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
 ) {
     info!("Starting DeviceService client...");
+    let sound_map_for_filter = Arc::clone(&sound_map);
     let device_info_stream = BroadcastStream::new(rx)
         .filter_map(move |result| {
-            let sound_map = Arc::clone(&sound_map);
+            let sound_map = Arc::clone(&sound_map_for_filter);
             result.ok().and_then(|info| {
                 let sound_map = sound_map.lock().unwrap();
                 if sound_map.contains_key(&info.address) {
@@ -49,7 +51,33 @@ async fn run_device_service_client(
             let mut stream = response.into_inner();
             while let Some(item) = stream.next().await {
                 match item {
-                    Ok(res) => debug!(?res, "DeviceService Response"),
+                    Ok(res) => {
+                        if let Some(event) = res.event {
+                            match event {
+                                Event::TimeUpdate(time_update) => {
+                                    debug!(?time_update, "TimeUpdate received");
+                                    // TODO: Handle TimeUpdate
+                                }
+                                Event::LocationUpdate(location_update) => {
+                                    debug!(?location_update, "LocationUpdate received");
+                                    let mut sound_map = sound_map.lock().unwrap();
+                                    sound_map.clear();
+                                    for loc in location_update.locations {
+                                        // TODO: mp3を修正する
+                                        // place_type に基づいてサウンドファイル名を決定
+                                        let sound_file = match loc.place_type.as_str() {
+                                            "entrance" => "entrance.mp3",
+                                            "bookshelf" => "bookshelf.mp3",
+                                            "cashier" => "cashier.mp3",
+                                            _ => "default.mp3", // 未知の place_type のためのデフォルトサウンド
+                                        };
+                                        sound_map.insert(loc.address, sound_file.to_string());
+                                    }
+                                    info!(new_sound_map_size = sound_map.len(), "Updated sound_map");
+                                }
+                            }
+                        }
+                    }
                     Err(e) => error!("DeviceService stream error: {}", e),
                 }
             }

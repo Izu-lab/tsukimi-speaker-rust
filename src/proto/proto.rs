@@ -15,10 +15,44 @@ pub struct StreamDeviceInfoRequest {
     pub locations: ::prost::alloc::vec::Vec<LocationRssi>,
 }
 /// サーバーからストリーミングされるメッセージ
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamDeviceInfoResponse {
+    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2")]
+    pub event: ::core::option::Option<stream_device_info_response::Event>,
+}
+/// Nested message and enum types in `StreamDeviceInfoResponse`.
+pub mod stream_device_info_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Event {
+        #[prost(message, tag = "1")]
+        TimeUpdate(super::TimeUpdate),
+        #[prost(message, tag = "2")]
+        LocationUpdate(super::LocationUpdate),
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TimeUpdate {
     #[prost(int64, tag = "1")]
     pub elapsed_nanoseconds: i64,
+}
+/// Locationの完全な情報を表すメッセージ
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LocationInfo {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub place_type: ::prost::alloc::string::String,
+}
+/// Location更新イベント
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LocationUpdate {
+    /// 全ロケーションのリスト
+    #[prost(message, repeated, tag = "1")]
+    pub locations: ::prost::alloc::vec::Vec<LocationInfo>,
 }
 /// Generated client implementations.
 pub mod device_service_client {

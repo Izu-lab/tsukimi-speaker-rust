@@ -11,14 +11,10 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: ビルド">
-      <change beforePath="$PROJECT_DIR$/.gemini/settings.json" beforeDir="false" afterPath="$PROJECT_DIR$/.gemini/settings.json" afterDir="false" />
+    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: リアルタイム通信内容を更新">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/audio_system/audio_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/audio_system/audio_main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/connect_system/connect_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/connect_system/connect_main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/proto/proto.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/proto/proto.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/.rustc_info.json" beforeDir="false" afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -128,7 +124,7 @@
       <workItem from="1758380232895" duration="7799000" />
       <workItem from="1758441348573" duration="7052000" />
       <workItem from="1758625867423" duration="13133000" />
-      <workItem from="1758763053623" duration="1569000" />
+      <workItem from="1758763053623" duration="3620000" />
     </task>
     <task id="LOCAL-00001" summary="feat: RUST版スピーカーのテスト">
       <option name="closed" value="true" />
@@ -346,7 +342,15 @@
       <option name="project" value="LOCAL" />
       <updated>1758644890550</updated>
     </task>
-    <option name="localTasksCounter" value="28" />
+    <task id="LOCAL-00028" summary="feat: リアルタイム通信内容を更新">
+      <option name="closed" value="true" />
+      <created>1758765015824</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1758765015824</updated>
+    </task>
+    <option name="localTasksCounter" value="29" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -385,7 +389,8 @@
     <MESSAGE value="feat: ログ出力を追加" />
     <MESSAGE value="feat: プロファイラーを実装" />
     <MESSAGE value="feat: ビルド" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: ビルド" />
+    <MESSAGE value="feat: リアルタイム通信内容を更新" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: リアルタイム通信内容を更新" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
