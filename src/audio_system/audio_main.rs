@@ -8,14 +8,15 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use ringbuf::HeapRb;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 
-#[instrument(skip(rx, time_sync_rx))]
+#[instrument(skip(rx, time_sync_rx, sound_map))]
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<u64>,
+    sound_map: Arc<Mutex<HashMap<String, String>>>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
     // ## 1. GStreamerと共有バッファの初期化 ##
@@ -26,19 +27,6 @@ pub fn audio_main(
     info!("GStreamer initialized successfully.");
 
     // --- ここから追加・変更 ---
-    // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
-    let mut sound_map = HashMap::new();
-    // 例: "sound.mp3"を再生させたいデバイスのアドレスをここに追加
-    sound_map.insert(
-        "00:11:22:33:44:55".to_string(),
-        "sound.mp3".to_string(),
-    );
-    // 例: 別のサウンドファイルを再生させたい場合。ファイルは別途用意する必要があります。
-    // sound_map.insert(
-    //     "AA:BB:CC:DD:EE:FF".to_string(),
-    //     "sound2.mp3".to_string(),
-    // );
-
     // 現在再生中のサウンドファイル名を保持
     let mut current_sound = None::<String>;
     let mut detected_devices = HashMap::<String, Arc<DeviceInfo>>::new();
@@ -97,9 +85,19 @@ pub fn audio_main(
 
     // ## 3. CPALオーディオストリームの構築 ##
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow!("No output device available"))?;
+
+    info!("Searching for audio device 'plughw:CARD=MAX98357A'...");
+    let device = host.output_devices()?
+        .find(|d| {
+            if let Ok(name) = d.name() {
+                name.starts_with("plughw:CARD=MAX98357A")
+            } else {
+                false
+            }
+        })
+        .ok_or_else(|| anyhow!("Failed to find 'plughw:CARD=MAX98357A'. Please check `aplay -L` and device connection."))?;
+
+    info!("Selected audio device: {}", device.name()?);
 
     let config = cpal::StreamConfig {
         channels: CHANNELS as u16,
@@ -216,12 +214,17 @@ pub fn audio_main(
             }
 
             // --- 再生するサウンドの決定 ---
-            let best_device = detected_devices
-                .values()
-                .filter(|d| sound_map.contains_key(&d.address))
-                .max_by_key(|d| d.rssi);
+            let best_device = {
+                let sound_map = sound_map.lock().unwrap();
+                detected_devices
+                    .values()
+                    .filter(|d| sound_map.contains_key(&d.address))
+                    .max_by_key(|d| d.rssi)
+                    .cloned()
+            };
 
             if let Some(device) = best_device {
+                let sound_map = sound_map.lock().unwrap();
                 if let Some(new_sound) = sound_map.get(&device.address) {
                     if current_sound.as_deref() != Some(new_sound.as_str()) {
                         info!(
@@ -234,7 +237,7 @@ pub fn audio_main(
                         pipeline.set_state(gst::State::Playing)?;
                         current_sound = Some(new_sound.clone());
                     }
-                    update_volume_from_rssi(device, &volume);
+                    update_volume_from_rssi(&device, &volume);
                 }
             } else {
                 // sound_mapに登録されたデバイスが1つも見つからない場合

@@ -7,11 +7,12 @@ use crate::audio_system::audio_main::audio_main;
 use crate::bluetooth_system::bluetooth_main::bluetooth_scanner;
 use crate::connect_system::connect_main::connect_main;
 use anyhow::Result;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn, Instrument};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeviceInfo {
     pub address: String,
     pub rssi: i16,
@@ -25,32 +26,33 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Spawning performance monitor task");
-    tokio::spawn(async {
-        use sysinfo::{System, Pid};
-        let mut sys = System::new_all();
-        // 自身のプロセスIDを取得
-        let pid = Pid::from(std::process::id() as usize);
-        loop {
-            // CPU、メモリ、プロセスの情報を更新
-            sys.refresh_cpu();
-            sys.refresh_memory();
-            sys.refresh_process(pid);
+    tokio::spawn(
+        async {
+            use sysinfo::{Pid, System};
+            let mut sys = System::new_all();
+            // 自身のプロセスIDを取得
+            let pid = Pid::from(std::process::id() as usize);
+            loop {
+                // CPU、メモリ、プロセスの情報を更新
+                sys.refresh_cpu();
+                sys.refresh_memory();
+                sys.refresh_process(pid);
 
-            // CPU全体の平均使用率
-            let total_cpu_usage = sys.global_cpu_info().cpu_usage();
+                // CPU全体の平均使用率
+                let total_cpu_usage = sys.global_cpu_info().cpu_usage();
 
-            // このプロセスのCPU使用率とメモリ使用量
-            let (process_cpu, process_mem) = if let Some(process) = sys.process(pid) {
-                (process.cpu_usage(), process.memory())
-            } else {
-                (0.0, 0)
-            };
+                // このプロセスのCPU使用率とメモリ使用量
+                let (process_cpu, process_mem) = if let Some(process) = sys.process(pid) {
+                    (process.cpu_usage(), process.memory())
+                } else {
+                    (0.0, 0)
+                };
 
-            // システム全体のメモリ使用量
-            let total_mem = sys.total_memory();
-            let used_mem = sys.used_memory();
+                // システム全体のメモリ使用量
+                let total_mem = sys.total_memory();
+                let used_mem = sys.used_memory();
 
-            tracing::info!(
+                tracing::info!(
                 "Perf: [CPU] Total: {:.1}%, Process: {:.1}% | [MEM] System: {:.2}/{:.2} GB, Process: {:.2} MB",
                 total_cpu_usage,
                 process_cpu,
@@ -59,12 +61,23 @@ async fn main() -> Result<()> {
                 process_mem as f64 / 1_048_576.0 // MiB
             );
 
-            // 5秒待機
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                // 5秒待機
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
         }
-    }.instrument(tracing::info_span!("performance_monitor_task")));
+        .instrument(tracing::info_span!("performance_monitor_task")),
+    );
 
     info!("Starting application");
+
+    // --- sound_mapの作成 ---
+    let mut sound_map = HashMap::new();
+    // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
+    sound_map.insert(
+        "00:11:22:33:44:55".to_string(),
+        "sound.mp3".to_string(),
+    );
+    let sound_map = Arc::new(Mutex::new(sound_map));
 
     // Bluetoothスキャナからのデータを受け取るためのmpscチャンネル
     let (bt_tx, mut bt_rx) = mpsc::channel::<Arc<DeviceInfo>>(32);
@@ -104,22 +117,28 @@ async fn main() -> Result<()> {
     // gRPC通信を行うタスク
     info!("Spawning gRPC server task");
     let grpc_rx = bcast_tx.subscribe();
-    let connect_handle = tokio::spawn(
-        async move {
-            if let Err(e) = connect_main(grpc_rx, time_sync_tx).await {
-                error!("Connect server error: {}", e);
+    let connect_handle = {
+        let sound_map_clone = Arc::clone(&sound_map);
+        tokio::spawn(
+            async move {
+                if let Err(e) = connect_main(grpc_rx, time_sync_tx, sound_map_clone).await {
+                    error!("Connect server error: {}", e);
+                }
             }
-        }
-        .instrument(tracing::info_span!("grpc_server_task")),
-    );
+            .instrument(tracing::info_span!("grpc_server_task")),
+        )
+    };
 
     // 同期的なaudio_main関数をspawn_blockingで実行
     info!("Spawning audio playback task");
     let audio_rx = bcast_tx.subscribe();
-    let audio_handle = tokio::task::spawn_blocking(move || {
-        let _span = tracing::info_span!("audio_playback_task").entered();
-        audio_main(audio_rx, time_sync_rx)
-    });
+    let audio_handle = {
+        let sound_map_clone = Arc::clone(&sound_map);
+        tokio::task::spawn_blocking(move || {
+            let _span = tracing::info_span!("audio_playback_task").entered();
+            audio_main(audio_rx, time_sync_rx, sound_map_clone)
+        })
+    };
 
     // オーディオ再生タスクの結果を待つ
     match audio_handle.await {
