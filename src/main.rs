@@ -78,6 +78,8 @@ async fn main() -> Result<()> {
         "sound.mp3".to_string(),
     );
     let sound_map = Arc::new(Mutex::new(sound_map));
+    let current_points = Arc::new(Mutex::new(0_i32));
+    let my_address = Arc::new(Mutex::new(None::<String>));
 
     // Bluetoothスキャナからのデータを受け取るためのmpscチャンネル
     let (bt_tx, mut bt_rx) = mpsc::channel::<Arc<DeviceInfo>>(32);
@@ -87,15 +89,17 @@ async fn main() -> Result<()> {
 
     // Bluetoothスキャナをバックグラウンドタスクとして実行
     info!("Spawning bluetooth scanner task");
-    let bluetooth_handle = tokio::spawn(
-        async move {
-            if let Err(e) = bluetooth_scanner(bt_tx).await {
-                error!("Bluetooth scanner error: {}", e);
-            }
-        }
-        .instrument(tracing::info_span!("bluetooth_scanner_task")),
-    );
-
+        let bluetooth_handle = {
+            let my_address_clone = Arc::clone(&my_address);
+            tokio::spawn(
+                async move {
+                    if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone).await {
+                        error!("Bluetooth scanner error: {}", e);
+                    }
+                }
+                .instrument(tracing::info_span!("bluetooth_scanner_task")), 
+            )
+        };
     // mpscからbroadcastへデータを転送するタスク
     info!("Spawning data forwarding task");
     let bcast_tx_clone = bcast_tx.clone();
@@ -119,9 +123,13 @@ async fn main() -> Result<()> {
     let grpc_rx = bcast_tx.subscribe();
     let connect_handle = {
         let sound_map_clone = Arc::clone(&sound_map);
+        let my_address_clone = Arc::clone(&my_address);
+        let current_points_clone = Arc::clone(&current_points);
         tokio::spawn(
             async move {
-                if let Err(e) = connect_main(grpc_rx, time_sync_tx, sound_map_clone).await {
+                if let Err(e) =
+                    connect_main(grpc_rx, time_sync_tx, sound_map_clone, my_address_clone, current_points_clone).await
+                {
                     error!("Connect server error: {}", e);
                 }
             }
@@ -134,9 +142,11 @@ async fn main() -> Result<()> {
     let audio_rx = bcast_tx.subscribe();
     let audio_handle = {
         let sound_map_clone = Arc::clone(&sound_map);
+        let my_address_clone = Arc::clone(&my_address);
+        let current_points_clone = Arc::clone(&current_points);
         tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!("audio_playback_task").entered();
-            audio_main(audio_rx, time_sync_rx, sound_map_clone)
+            audio_main(audio_rx, time_sync_rx, sound_map_clone, my_address_clone, current_points_clone)
         })
     };
 

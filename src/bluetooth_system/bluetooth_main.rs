@@ -4,15 +4,16 @@ use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use futures::stream::StreamExt;
 use tracing::{debug, error, info, instrument};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
 
 /// Bluetoothデバイスをスキャンする非同期関数
-#[instrument(skip(tx))]
+#[instrument(skip(tx, my_address))]
 pub async fn bluetooth_scanner(
     tx: mpsc::Sender<Arc<DeviceInfo>>,
+    my_address: Arc<Mutex<Option<String>>>,
 ) -> Result<()> {
     info!("Starting Bluetooth scanner...");
     let manager = Manager::new().await?;
@@ -25,6 +26,13 @@ pub async fn bluetooth_scanner(
 
     let adapter_info = central.adapter_info().await?;
     info!(?adapter_info, "Using Bluetooth adapter");
+
+    // 自身のBluetoothアドレスを保存
+    {
+        let mut my_addr = my_address.lock().unwrap();
+        *my_addr = Some(adapter_info.clone());
+        info!(my_addr = ?*my_addr, "My address updated");
+    }
 
     let mut events = central.events().await?;
     info!("Scanning for BLE devices...");

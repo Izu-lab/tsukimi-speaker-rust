@@ -17,6 +17,8 @@ async fn run_device_service_client(
     mut client: DeviceServiceClient<Channel>,
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
+    my_address: Arc<Mutex<Option<String>>>,
+    current_points: Arc<Mutex<i32>>,
 ) {
     info!("Starting DeviceService client...");
     let sound_map_for_filter = Arc::clone(&sound_map);
@@ -75,6 +77,23 @@ async fn run_device_service_client(
                                     }
                                     info!(new_sound_map_size = sound_map.len(), "Updated sound_map");
                                 }
+                                Event::PointUpdate(point_update) => {
+                                    debug!(?point_update, "PointUpdate received");
+                                    let my_address_guard = my_address.lock().unwrap();
+                                    if let Some(my_addr) = my_address_guard.as_ref() {
+                                        if *my_addr == point_update.user_id {
+                                            let mut points = current_points.lock().unwrap();
+                                            *points = point_update.points;
+                                            info!(user_id = %point_update.user_id, points = *points, "Updated my points");
+                                        } else {
+                                            debug!(
+                                                my_addr,
+                                                received_user_id = %point_update.user_id,
+                                                "Received points for another user, ignoring."
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -122,6 +141,8 @@ pub async fn connect_main(
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
     time_sync_tx: mpsc::Sender<u64>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
+    my_address: Arc<Mutex<Option<String>>>,
+    current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
     let server_addr = "http://[::1]:50051";
     info!("Connecting to gRPC server at {}", server_addr);
@@ -152,10 +173,14 @@ pub async fn connect_main(
     info!("Spawning gRPC client tasks...");
     let device_service_handle = {
         let sound_map_clone = Arc::clone(&sound_map);
+        let my_address_clone = Arc::clone(&my_address);
+        let current_points_clone = Arc::clone(&current_points);
         tokio::spawn(run_device_service_client(
             device_client,
             rx,
             sound_map_clone,
+            my_address_clone,
+            current_points_clone,
         ))
     };
     let time_service_handle = tokio::spawn(run_time_service_client(time_client, time_sync_tx));

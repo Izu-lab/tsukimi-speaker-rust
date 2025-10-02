@@ -17,6 +17,8 @@ pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<u64>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
+    my_address: Arc<Mutex<Option<String>>>,
+    current_points: Arc<Mutex<i32>>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
     // ## 1. GStreamerと共有バッファの初期化 ##
@@ -216,11 +218,25 @@ pub fn audio_main(
             // --- 再生するサウンドの決定 ---
             let best_device = {
                 let sound_map = sound_map.lock().unwrap();
-                detected_devices
+                let my_address_guard = my_address.lock().unwrap();
+                let my_addr_opt = my_address_guard.as_deref();
+                let points = *current_points.lock().unwrap();
+
+                let mut candidates: Vec<_> = detected_devices
                     .values()
                     .filter(|d| sound_map.contains_key(&d.address))
-                    .max_by_key(|d| d.rssi)
-                    .cloned()
+                    .collect();
+
+                // ポイントとRSSIでソート
+                // 1. ポイントが高い順 (自分自身のデバイスであれば現在のポイント、そうでなければ0)
+                // 2. RSSIが高い順
+                candidates.sort_by(|a, b| {
+                    let a_points = my_addr_opt.map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
+                    let b_points = my_addr_opt.map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
+                    b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
+                });
+
+                candidates.first().cloned()
             };
 
             if let Some(device) = best_device {

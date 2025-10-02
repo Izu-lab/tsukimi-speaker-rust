@@ -17,7 +17,7 @@ pub struct StreamDeviceInfoRequest {
 /// サーバーからストリーミングされるメッセージ
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamDeviceInfoResponse {
-    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2")]
+    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3")]
     pub event: ::core::option::Option<stream_device_info_response::Event>,
 }
 /// Nested message and enum types in `StreamDeviceInfoResponse`.
@@ -28,6 +28,8 @@ pub mod stream_device_info_response {
         TimeUpdate(super::TimeUpdate),
         #[prost(message, tag = "2")]
         LocationUpdate(super::LocationUpdate),
+        #[prost(message, tag = "3")]
+        PointUpdate(super::PointUpdate),
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -53,6 +55,14 @@ pub struct LocationUpdate {
     /// 全ロケーションのリスト
     #[prost(message, repeated, tag = "1")]
     pub locations: ::prost::alloc::vec::Vec<LocationInfo>,
+}
+/// Point更新イベント
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PointUpdate {
+    #[prost(string, tag = "1")]
+    pub user_id: ::prost::alloc::string::String,
+    #[prost(int32, tag = "2")]
+    pub points: i32,
 }
 /// Generated client implementations.
 pub mod device_service_client {
