@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Endpoint};
 use tracing::{debug, error, info, instrument};
 
 #[instrument(skip(client, rx, sound_map))]
@@ -144,12 +144,12 @@ pub async fn connect_main(
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "http://[::1]:50051";
+    let server_addr = "https://tsukimi-background-823736753003.asia-northeast1.run.app";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
     let channel = loop {
-        match Channel::from_static(server_addr).connect().await {
+        match Endpoint::from_static(server_addr).connect().await {
             Ok(channel) => {
                 info!("Successfully connected to gRPC server.");
                 break channel;

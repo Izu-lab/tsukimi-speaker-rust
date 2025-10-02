@@ -28,6 +28,21 @@ pub fn audio_main(
     }
     info!("GStreamer initialized successfully.");
 
+    // フェードの状態を管理するenum
+    enum FadeState {
+        None,
+        FadingOut {
+            start_time: std::time::Instant,
+            target_sound: String,
+        },
+        FadingIn {
+            start_time: std::time::Instant,
+            target_volume: f64,
+        },
+    }
+    let mut fade_state = FadeState::None;
+    const FADE_DURATION: std::time::Duration = std::time::Duration::from_millis(500); // 0.5秒でフェード
+
     // --- ここから追加・変更 ---
     // 現在再生中のサウンドファイル名を保持
     let mut current_sound = None::<String>;
@@ -239,25 +254,89 @@ pub fn audio_main(
                 candidates.first().cloned()
             };
 
+            // --- フェード処理 ---
+            let mut next_fade_state = None;
+            match &fade_state {
+                FadeState::FadingOut { start_time, target_sound } => {
+                    let elapsed = start_time.elapsed();
+                    if elapsed >= FADE_DURATION {
+                        // フェードアウト完了
+                        volume.set_property("volume", 0.0);
+
+                        // 音源切り替え
+                        debug!("Switching sound to {}", target_sound);
+                        pipeline.set_state(gst::State::Ready)?;
+                        filesrc.set_property("location", target_sound.clone());
+                        pipeline.seek_simple(gst::SeekFlags::FLUSH, gst::ClockTime::from_seconds(0))?;
+                        pipeline.set_state(gst::State::Playing)?;
+                        current_sound = Some(target_sound.clone());
+
+                        // フェードインへ移行
+                        let target_volume = if let Some(device) = &best_device {
+                            get_volume_from_rssi(device)
+                        } else {
+                            1.0
+                        };
+                        next_fade_state = Some(FadeState::FadingIn {
+                            start_time: std::time::Instant::now(),
+                            target_volume,
+                        });
+                    } else {
+                        // フェードアウト中
+                        let progress = elapsed.as_secs_f64() / FADE_DURATION.as_secs_f64();
+                        // cosカーブで 1.0 -> 0.0 (実際はsinを反転)
+                        let eased_progress = (progress * std::f64::consts::FRAC_PI_2).sin();
+                        let new_volume = 1.0 - eased_progress;
+                        volume.set_property("volume", new_volume.clamp(0.0, 1.0));
+                    }
+                }
+                FadeState::FadingIn { start_time, target_volume } => {
+                    let elapsed = start_time.elapsed();
+                    if elapsed >= FADE_DURATION {
+                        // フェードイン完了
+                        volume.set_property("volume", *target_volume);
+                        next_fade_state = Some(FadeState::None);
+                        debug!("Fade-in complete.");
+                    } else {
+                        // フェードイン中
+                        let progress = elapsed.as_secs_f64() / FADE_DURATION.as_secs_f64();
+                        // sinカーブで 0.0 -> target_volume
+                        let new_volume = *target_volume * (progress * std::f64::consts::FRAC_PI_2).sin();
+                        volume.set_property("volume", new_volume.clamp(0.0, 1.0));
+                    }
+                }
+                FadeState::None => { // 何もしない
+                }
+            }
+
+            if let Some(new_state) = next_fade_state {
+                fade_state = new_state;
+            }
+
+            // --- 音源切り替えのトリガーと音量調整 ---
             if let Some(device) = best_device {
                 let sound_map = sound_map.lock().unwrap();
                 if let Some(new_sound) = sound_map.get(&device.address) {
-                    if current_sound.as_deref() != Some(new_sound.as_str()) {
+                    if matches!(fade_state, FadeState::None) && current_sound.as_deref() != Some(new_sound.as_str()) {
                         info!(
                             new_sound,
                             device_address = %device.address,
                             "Switching sound"
                         );
-                        pipeline.set_state(gst::State::Ready)?;
-                        filesrc.set_property("location", new_sound);
-                        pipeline.set_state(gst::State::Playing)?;
-                        current_sound = Some(new_sound.clone());
+                        // フェードアウトを開始
+                        fade_state = FadeState::FadingOut {
+                            start_time: std::time::Instant::now(),
+                            target_sound: new_sound.clone(),
+                        };
                     }
-                    update_volume_from_rssi(&device, &volume);
+                    // RSSIによる音量調整はフェード中でないときだけ行う
+                    if matches!(fade_state, FadeState::None) {
+                        update_volume_from_rssi(&device, &volume);
+                    }
                 }
             } else {
                 // sound_mapに登録されたデバイスが1つも見つからない場合
-                if current_sound.is_some() {
+                if current_sound.is_some() && matches!(fade_state, FadeState::None) {
                     info!("No mapped devices found, stopping playback.");
                     pipeline.set_state(gst::State::Ready)?;
                     current_sound = None;
@@ -276,16 +355,17 @@ pub fn audio_main(
 /// RSSI値に基づいてGStreamerの音量を更新する
 #[instrument(skip(volume_element), fields(device_address = %device_info.address, rssi = device_info.rssi))]
 fn update_volume_from_rssi(device_info: &Arc<DeviceInfo>, volume_element: &gst::Element) {
-    // RSSIを音量レベル(0.0-1.0)にマッピング
+    let volume_level = get_volume_from_rssi(device_info);
+    debug!(volume = volume_level, "Update volume");
+    volume_element.set_property("volume", volume_level);
+}
+
+/// RSSI値から音量レベル(0.0-1.0)を計算する
+fn get_volume_from_rssi(device_info: &Arc<DeviceInfo>) -> f64 {
     let rssi = device_info.rssi as f64;
     const MAX_RSSI: f64 = -40.0; // 音量1.0になるRSSI値
     const MIN_RSSI: f64 = -90.0; // 音量0.0になるRSSI値
 
-    let mut volume_level = (rssi - MIN_RSSI) / (MAX_RSSI - MIN_RSSI);
-    volume_level = volume_level.clamp(0.0, 1.0); // 0.0-1.0の範囲に収める
-
-    debug!(volume = volume_level, "Update volume");
-
-    // GStreamerのvolumeエレメントに音量を設定
-    volume_element.set_property("volume", volume_level);
+    let volume_level = (rssi - MIN_RSSI) / (MAX_RSSI - MIN_RSSI);
+    volume_level.clamp(0.0, 1.0) // 0.0-1.0の範囲に収める
 }
