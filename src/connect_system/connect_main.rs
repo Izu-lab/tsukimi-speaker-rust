@@ -68,10 +68,13 @@ async fn run_device_service_client(
                                         // TODO: mp3を修正する
                                         // place_type に基づいてサウンドファイル名を決定
                                         let sound_file = match loc.place_type.as_str() {
-                                            "entrance" => "entrance.mp3",
-                                            "bookshelf" => "bookshelf.mp3",
-                                            "cashier" => "cashier.mp3",
-                                            _ => "default.mp3", // 未知の place_type のためのデフォルトサウンド
+                                            "projection_mapping" => "tsukimi-main.mp3",
+                                            "buddhas_bowl" => "",
+                                            "jeweled_branch" => "",
+                                            "fire_rat_robe" => "",
+                                            "dragons_jewel" => "",
+                                            "swallows_cowry" => "",
+                                            _ => "sound.mp3", // 未知の place_type のためのデフォルトサウンド
                                         };
                                         sound_map.insert(loc.address, sound_file.to_string());
                                     }

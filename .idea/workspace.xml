@@ -11,12 +11,10 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: ポイントを使ってサウンドを選択できるように">
+    <list default="true" id="55d2b19b-c53d-4a20-bcda-6563e718557c" name="変更" comment="feat: バックエンドのURLを指定">
+      <change afterPath="$PROJECT_DIR$/tsukimi-main.mp3" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/audio_system/audio_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/audio_system/audio_main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/connect_system/connect_main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/connect_system/connect_main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/.rustc_info.json" beforeDir="false" afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -80,8 +78,8 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$/src" />
       <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/src" />
     </key>
   </component>
   <component name="RunManager">
@@ -129,7 +127,7 @@
       <workItem from="1758763053623" duration="3620000" />
       <workItem from="1758767024763" duration="31000" />
       <workItem from="1759308214090" duration="4700000" />
-      <workItem from="1759367356286" duration="2991000" />
+      <workItem from="1759367356286" duration="4515000" />
     </task>
     <task id="LOCAL-00001" summary="feat: RUST版スピーカーのテスト">
       <option name="closed" value="true" />
@@ -371,7 +369,15 @@
       <option name="project" value="LOCAL" />
       <updated>1759367402131</updated>
     </task>
-    <option name="localTasksCounter" value="31" />
+    <task id="LOCAL-00031" summary="feat: バックエンドのURLを指定">
+      <option name="closed" value="true" />
+      <created>1759380957525</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1759380957525</updated>
+    </task>
+    <option name="localTasksCounter" value="32" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -413,7 +419,8 @@
     <MESSAGE value="feat: リアルタイム通信内容を更新" />
     <MESSAGE value="feat: サウンド周りの通信を確立" />
     <MESSAGE value="feat: ポイントを使ってサウンドを選択できるように" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: ポイントを使ってサウンドを選択できるように" />
+    <MESSAGE value="feat: バックエンドのURLを指定" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: バックエンドのURLを指定" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
