@@ -1,7 +1,7 @@
 use crate::proto::proto::device_service_client::DeviceServiceClient;
 use crate::proto::proto::stream_device_info_response::Event;
 use crate::proto::proto::time_service_client::TimeServiceClient;
-use crate::proto::proto::{LocationRssi, StreamDeviceInfoRequest, StreamTimeRequest};
+use crate::proto::proto::{LocationRssi, SoundSetting, StreamDeviceInfoRequest, StreamTimeRequest};
 use crate::DeviceInfo;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,7 @@ use tracing::{debug, error, info, instrument};
 async fn run_device_service_client(
     mut client: DeviceServiceClient<Channel>,
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
+    sound_setting_tx: mpsc::Sender<SoundSetting>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
@@ -97,6 +98,14 @@ async fn run_device_service_client(
                                         }
                                     }
                                 }
+                                Event::SoundSettingUpdate(sound_setting_update) => {
+                                    debug!(?sound_setting_update, "SoundSettingUpdate received");
+                                    if let Some(settings) = sound_setting_update.settings {
+                                        if let Err(e) = sound_setting_tx.send(settings).await {
+                                            error!("Failed to send sound settings: {}", e);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -143,11 +152,12 @@ async fn run_time_service_client(
 pub async fn connect_main(
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
     time_sync_tx: mpsc::Sender<u64>,
+    sound_setting_tx: mpsc::Sender<SoundSetting>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "https://tsukimi-background-823736753003.asia-northeast1.run.app";
+    let server_addr = "http://34.85.89.86:50051";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
@@ -178,9 +188,11 @@ pub async fn connect_main(
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let sound_setting_tx_clone = sound_setting_tx.clone();
         tokio::spawn(run_device_service_client(
             device_client,
             rx,
+            sound_setting_tx_clone,
             sound_map_clone,
             my_address_clone,
             current_points_clone,

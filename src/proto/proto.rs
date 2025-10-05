@@ -17,7 +17,7 @@ pub struct StreamDeviceInfoRequest {
 /// サーバーからストリーミングされるメッセージ
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamDeviceInfoResponse {
-    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3")]
+    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3, 4")]
     pub event: ::core::option::Option<stream_device_info_response::Event>,
 }
 /// Nested message and enum types in `StreamDeviceInfoResponse`.
@@ -30,6 +30,9 @@ pub mod stream_device_info_response {
         LocationUpdate(super::LocationUpdate),
         #[prost(message, tag = "3")]
         PointUpdate(super::PointUpdate),
+        /// \<--- 追加
+        #[prost(message, tag = "4")]
+        SoundSettingUpdate(super::SoundSettingUpdate),
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -63,6 +66,28 @@ pub struct PointUpdate {
     pub user_id: ::prost::alloc::string::String,
     #[prost(int32, tag = "2")]
     pub points: i32,
+}
+/// サウンド設定メッセージ (--- 追加 ---)
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SoundSetting {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(double, tag = "2")]
+    pub max_volume_rssi: f64,
+    #[prost(double, tag = "3")]
+    pub min_volume_rssi: f64,
+    #[prost(double, tag = "4")]
+    pub max_volume: f64,
+    #[prost(double, tag = "5")]
+    pub min_volume: f64,
+    #[prost(bool, tag = "6")]
+    pub is_muted: bool,
+}
+/// サウンド設定更新イベント (--- 追加 ---)
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SoundSettingUpdate {
+    #[prost(message, optional, tag = "1")]
+    pub settings: ::core::option::Option<SoundSetting>,
 }
 /// Generated client implementations.
 pub mod device_service_client {

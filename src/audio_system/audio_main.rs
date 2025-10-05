@@ -1,3 +1,4 @@
+use crate::proto::proto::SoundSetting;
 use crate::DeviceInfo;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -16,11 +17,22 @@ use tracing::{debug, error, info, instrument, warn};
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<u64>,
+    mut sound_setting_rx: mpsc::Receiver<SoundSetting>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
+
+    // サウンド設定のデフォルト値
+    let sound_setting = Arc::new(Mutex::new(SoundSetting {
+        id: "default".to_string(),
+        max_volume_rssi: -40.0,
+        min_volume_rssi: -90.0,
+        max_volume: 1.0,
+        min_volume: 0.0,
+        is_muted: false,
+    }));
     // ## 1. GStreamerと共有バッファの初期化 ##
     if let Err(e) = gst::init() {
         error!("Failed to initialize GStreamer: {}", e);
@@ -61,7 +73,7 @@ pub fn audio_main(
 
     // ## 2. GStreamerパイプラインの構築 ##
     let pipeline_str = format!(
-        "filesrc name=src location=sound.mp3 ! decodebin ! volume name=vol ! audioconvert ! audioresample ! appsink name=sink caps=audio/x-raw,format=F32LE,rate={},channels={}",
+        "filesrc name=src location=sound.mp3 ! decodebin ! volume name=vol ! pitch name=pch ! audioconvert ! audioresample ! appsink name=sink caps=audio/x-raw,format=F32LE,rate={},channels={}",
         SAMPLE_RATE, CHANNELS
     );
 
@@ -79,11 +91,16 @@ pub fn audio_main(
     let volume = pipeline
         .by_name("vol")
         .ok_or_else(|| anyhow!("Failed to get volume element"))?;
+    let pitch = pipeline
+        .by_name("pch")
+        .ok_or_else(|| anyhow!("Failed to get pitch element"))?;
     let appsink = pipeline
         .by_name("sink")
         .ok_or_else(|| anyhow!("Failed to get sink element"))?
         .downcast::<gst_app::AppSink>()
         .map_err(|_| anyhow!("Sink element is not an appsink!"))?;
+
+    let mut current_rate = 1.0f64;
 
     // appsinkにコールバックを設定
     appsink.set_callbacks(
@@ -103,16 +120,40 @@ pub fn audio_main(
     // ## 3. CPALオーディオストリームの構築 ##
     let host = cpal::default_host();
 
-    info!("Searching for audio device 'plughw:CARD=MAX98357A'...");
-    let device = host.output_devices()?
-        .find(|d| {
-            if let Ok(name) = d.name() {
-                name.starts_with("plughw:CARD=MAX98357A")
-            } else {
-                false
-            }
-        })
-        .ok_or_else(|| anyhow!("Failed to find 'plughw:CARD=MAX98357A'. Please check `aplay -L` and device connection."))?;
+    #[cfg(target_os = "linux")]
+    let device = {
+        info!("Searching for audio device 'plughw:CARD=MAX98357A'...");
+        host.output_devices()?
+            .find(|d| {
+                if let Ok(name) = d.name() {
+                    name.starts_with("plughw:CARD=MAX98357A")
+                } else {
+                    false
+                }
+            })
+            .ok_or_else(|| anyhow!("Failed to find 'plughw:CARD=MAX98357A'. Please check `aplay -L` and device connection."))?
+    };
+
+    #[cfg(target_os = "macos")]
+    let device = {
+        info!("Searching for macOS audio device (USB or External)...");
+        let devices = host.output_devices()?;
+        let default_device = host.default_output_device();
+
+        devices
+            .into_iter()
+            .find(|d| d.name().map_or(false, |name| name.contains("USB")))
+            .or_else(|| {
+                host.output_devices().ok()?.into_iter()
+                    .find(|d| d.name().map_or(false, |name| name.contains("External")))
+            })
+            .or(default_device)
+            .ok_or_else(|| anyhow!("No suitable output device found for macOS."))?
+    };
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let device = host.default_output_device()
+        .ok_or_else(|| anyhow!("No default output device found."))?;
 
     info!("Selected audio device: {}", device.name()?);
 
@@ -172,40 +213,62 @@ pub fn audio_main(
 
             // --- 時間同期情報の受信 ---
             if let Ok(time_ns) = time_sync_rx.try_recv() {
-                let seek_time = gst::ClockTime::from_nseconds(time_ns);
+                let server_time = gst::ClockTime::from_nseconds(time_ns);
 
-                // パイプラインから音源の長さを取得
-                if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
-                    if duration.nseconds() > 0 {
-                        // シーク時間を音源の長さで割った余りを計算してループさせる
-                        let actual_seek_ns = seek_time.nseconds() % duration.nseconds();
-                        let actual_seek_time = gst::ClockTime::from_nseconds(actual_seek_ns);
+                if let (Some(current_pos), Some(duration)) = (
+                    pipeline.query_position::<gst::ClockTime>(),
+                    pipeline.query_duration::<gst::ClockTime>(),
+                ) {
+                    if duration.nseconds() == 0 {
+                        continue;
+                    }
 
-                        debug!(
-                            received_seek_time = ?seek_time,
-                            duration = ?duration,
-                            actual_seek_time = ?actual_seek_time,
-                            "Seeking with loop"
-                        );
+                    // サーバー時間もローカル時間もdurationの範囲内に正規化
+                    let server_pos_ns = server_time.nseconds() % duration.nseconds();
+                    let current_pos_ns = current_pos.nseconds();
 
-                        // 再生位置を更新
-                        if let Err(e) = pipeline.seek_simple(
-                            gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                            actual_seek_time,
-                        ) {
-                            warn!("Failed to seek in pipeline: {}", e);
+                    // 差を計算 (ナノ秒単位)
+                    let diff_ns = server_pos_ns as i64 - current_pos_ns as i64;
+                    let diff_abs_s = (diff_ns.abs() as f64) / 1e9;
+
+                    let new_rate = if diff_abs_s > 1.0 {
+                        // 1.0秒以上の大きなズレ -> seek
+                        let seek_time = gst::ClockTime::from_nseconds(server_pos_ns);
+                        warn!(?seek_time, diff_s = diff_ns as f64 / 1e9, "Large drift detected, seeking.");
+                        if let Err(e) = pipeline.seek_simple(gst::SeekFlags::FLUSH, seek_time) {
+                            error!("Failed to seek: {}", e);
                         }
-                    } // durationが0の場合はシークしない
-                } else {
-                    // durationが取得できない場合は、とりあえずそのままシークしてみる
-                    debug!(seek_time = ?seek_time, "Seeking without duration");
-                    if let Err(e) = pipeline.seek_simple(
-                        gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                        seek_time,
-                    ) {
-                        warn!("Failed to seek (no duration): {}", e);
+                        // seek後はレートをリセット
+                        1.0
+                    } else if diff_abs_s > 0.05 {
+                        // 0.05秒から1.0秒の小さなズレ -> 再生速度で吸収
+                        let rate = if diff_ns > 0 {
+                            // サーバーが進んでいる -> 速く再生
+                            1.05
+                        } else {
+                            // サーバーが遅れている -> 遅く再生
+                            0.95
+                        };
+                        debug!(diff_s = diff_ns as f64 / 1e9, new_rate = rate, "Small drift detected, adjusting playback rate.");
+                        rate
+                    } else {
+                        // 0.05秒未満のごくわずかなズレ -> 通常速度に戻す
+                        1.0
+                    };
+
+                    // 現在のレートと異なる場合のみプロパティを更新
+                    if (new_rate - current_rate).abs() > 1e-9 {
+                        pitch.set_property("tempo", new_rate);
+                        current_rate = new_rate;
+                        debug!(current_rate, "Update playback rate");
                     }
                 }
+            }
+
+            // --- サウンド設定の受信 ---
+            if let Ok(new_setting) = sound_setting_rx.try_recv() {
+                info!(?new_setting, "Received new sound setting");
+                *sound_setting.lock().unwrap() = new_setting;
             }
 
             // --- Bluetoothデバイス情報の受信と更新 ---
@@ -272,10 +335,13 @@ pub fn audio_main(
                         current_sound = Some(target_sound.clone());
 
                         // フェードインへ移行
-                        let target_volume = if let Some(device) = &best_device {
-                            get_volume_from_rssi(device)
-                        } else {
-                            1.0
+                        let target_volume = {
+                            let setting = sound_setting.lock().unwrap();
+                            if let Some(device) = &best_device {
+                                get_volume_from_rssi(device, &setting)
+                            } else {
+                                setting.max_volume
+                            }
                         };
                         next_fade_state = Some(FadeState::FadingIn {
                             start_time: std::time::Instant::now(),
@@ -331,7 +397,7 @@ pub fn audio_main(
                     }
                     // RSSIによる音量調整はフェード中でないときだけ行う
                     if matches!(fade_state, FadeState::None) {
-                        update_volume_from_rssi(&device, &volume);
+                        update_volume_from_rssi(&device, &volume, &sound_setting);
                     }
                 }
             } else {
@@ -353,19 +419,38 @@ pub fn audio_main(
 }
 
 /// RSSI値に基づいてGStreamerの音量を更新する
-#[instrument(skip(volume_element), fields(device_address = %device_info.address, rssi = device_info.rssi))]
-fn update_volume_from_rssi(device_info: &Arc<DeviceInfo>, volume_element: &gst::Element) {
-    let volume_level = get_volume_from_rssi(device_info);
+#[instrument(skip(volume_element, sound_setting), fields(device_address = %device_info.address, rssi = device_info.rssi))]
+fn update_volume_from_rssi(
+    device_info: &Arc<DeviceInfo>,
+    volume_element: &gst::Element,
+    sound_setting: &Arc<Mutex<SoundSetting>>,
+) {
+    let setting = sound_setting.lock().unwrap();
+    let volume_level = get_volume_from_rssi(device_info, &setting);
     debug!(volume = volume_level, "Update volume");
     volume_element.set_property("volume", volume_level);
 }
 
 /// RSSI値から音量レベル(0.0-1.0)を計算する
-fn get_volume_from_rssi(device_info: &Arc<DeviceInfo>) -> f64 {
-    let rssi = device_info.rssi as f64;
-    const MAX_RSSI: f64 = -40.0; // 音量1.0になるRSSI値
-    const MIN_RSSI: f64 = -90.0; // 音量0.0になるRSSI値
+fn get_volume_from_rssi(device_info: &Arc<DeviceInfo>, setting: &SoundSetting) -> f64 {
+    if setting.is_muted {
+        return setting.min_volume;
+    }
 
-    let volume_level = (rssi - MIN_RSSI) / (MAX_RSSI - MIN_RSSI);
-    volume_level.clamp(0.0, 1.0) // 0.0-1.0の範囲に収める
+    let rssi = device_info.rssi as f64;
+    let max_rssi = setting.max_volume_rssi;
+    let min_rssi = setting.min_volume_rssi;
+
+    if rssi >= max_rssi {
+        return setting.max_volume;
+    }
+    if rssi <= min_rssi {
+        return setting.min_volume;
+    }
+
+    let volume_ratio = (rssi - min_rssi) / (max_rssi - min_rssi);
+    let volume_range = setting.max_volume - setting.min_volume;
+    let volume_level = setting.min_volume + (volume_ratio * volume_range);
+
+    volume_level.clamp(setting.min_volume, setting.max_volume)
 }

@@ -6,6 +6,7 @@ pub mod proto;
 use crate::audio_system::audio_main::audio_main;
 use crate::bluetooth_system::bluetooth_main::bluetooth_scanner;
 use crate::connect_system::connect_main::connect_main;
+use crate::proto::proto::SoundSetting;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -118,6 +119,9 @@ async fn main() -> Result<()> {
     // 時間同期のためのmpscチャンネル
     let (time_sync_tx, time_sync_rx) = mpsc::channel::<u64>(32);
 
+    // サウンド設定のためのmpscチャンネル
+    let (sound_setting_tx, sound_setting_rx) = mpsc::channel::<SoundSetting>(32);
+
     // gRPC通信を行うタスク
     info!("Spawning gRPC server task");
     let grpc_rx = bcast_tx.subscribe();
@@ -125,10 +129,11 @@ async fn main() -> Result<()> {
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let sound_setting_tx_clone = sound_setting_tx.clone();
         tokio::spawn(
             async move {
                 if let Err(e) =
-                    connect_main(grpc_rx, time_sync_tx, sound_map_clone, my_address_clone, current_points_clone).await
+                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, sound_map_clone, my_address_clone, current_points_clone).await
                 {
                     error!("Connect server error: {}", e);
                 }
@@ -146,7 +151,7 @@ async fn main() -> Result<()> {
         let current_points_clone = Arc::clone(&current_points);
         tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!("audio_playback_task").entered();
-            audio_main(audio_rx, time_sync_rx, sound_map_clone, my_address_clone, current_points_clone)
+            audio_main(audio_rx, time_sync_rx, sound_setting_rx, sound_map_clone, my_address_clone, current_points_clone)
         })
     };
 
