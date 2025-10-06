@@ -47,7 +47,7 @@ pub fn audio_main(
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
-    let pipeline_str = "filesrc name=src location=tsukimi-main.mp3 ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! pulsesink";
+    let pipeline_str = "filesrc name=src location=tsukimi-main.mp3 ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! device='plughw:0,0'";
     let pipeline = gst::parse::launch(pipeline_str)?;
     let pipeline = pipeline.downcast::<gst::Pipeline>().unwrap();
 
