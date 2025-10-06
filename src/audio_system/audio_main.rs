@@ -40,13 +40,7 @@ pub fn audio_main(
     gst::init()?;
     info!("GStreamer initialized successfully.");
 
-    enum FadeState {
-        None,
-        FadingOut { start_time: Instant, target_sound: String },
-        FadingIn { start_time: Instant, target_volume: f64 },
-    }
-    let mut fade_state = FadeState::None;
-    const FADE_DURATION: std::time::Duration = std::time::Duration::from_millis(500);
+
 
     let mut current_sound = None::<String>;
     let mut detected_devices = HashMap::<String, Arc<DeviceInfo>>::new();
@@ -219,64 +213,35 @@ pub fn audio_main(
 
                 candidates.first().cloned()
             };
-        let mut next_fade_state = None;
-        match &fade_state {
-            FadeState::FadingOut { start_time, target_sound } => {
-                let elapsed = start_time.elapsed();
-                if elapsed >= FADE_DURATION {
-                    volume.set_property("volume", 0.0);
-                    info!("Switching sound to {}", target_sound);
-                    pipeline.set_state(gst::State::Null)?;
-                    filesrc.set_property("location", target_sound.clone());
-                    pipeline.set_state(gst::State::Playing)?;
-                    current_sound = Some(target_sound.clone());
-                    let target_volume = {
-                        let setting = sound_setting.lock().unwrap();
-                        if let Some(device) = &best_device {
-                            get_volume_from_rssi(device, &setting)
-                        } else {
-                            setting.max_volume
-                        }
-                    };
-                    next_fade_state = Some(FadeState::FadingIn { start_time: Instant::now(), target_volume });
-                } else {
-                    let progress = elapsed.as_secs_f64() / FADE_DURATION.as_secs_f64();
-                    let new_volume = 1.0 - (progress * std::f64::consts::FRAC_PI_2).sin();
-                    volume.set_property("volume", new_volume.clamp(0.0, 1.0));
-                }
-            }
-            FadeState::FadingIn { start_time, target_volume } => {
-                let elapsed = start_time.elapsed();
-                if elapsed >= FADE_DURATION {
-                    volume.set_property("volume", *target_volume);
-                    next_fade_state = Some(FadeState::None);
-                } else {
-                    let progress = elapsed.as_secs_f64() / FADE_DURATION.as_secs_f64();
-                    let new_volume = *target_volume * (progress * std::f64::consts::FRAC_PI_2).sin();
-                    volume.set_property("volume", new_volume.clamp(0.0, 1.0));
-                }
-            }
-            FadeState::None => {}
-        }
-        if let Some(new_state) = next_fade_state {
-            fade_state = new_state;
-        }
         if let Some(device) = best_device {
             let sound_map = sound_map.lock().unwrap();
             if let Some(new_sound) = sound_map.get(&device.address) {
-                if matches!(&fade_state, FadeState::None) && current_sound.as_deref() != Some(new_sound.as_str()) {
+                if current_sound.as_deref() != Some(new_sound.as_str()) {
                     info!("Switching sound to {}", new_sound);
-                    fade_state = FadeState::FadingOut { start_time: Instant::now(), target_sound: new_sound.clone() };
-                }
-                if matches!(&fade_state, FadeState::None) {
-                    update_volume_from_rssi(&device, &volume, &sound_setting);
+                    pipeline.set_state(gst::State::Null)?;
+                    filesrc.set_property("location", new_sound.clone());
+                    pipeline.set_state(gst::State::Playing)?;
+                    current_sound = Some(new_sound.clone());
                 }
             }
         } else {
             let default_sound = "tsukimi-main.mp3";
-            if matches!(&fade_state, FadeState::None) && current_sound.as_deref() != Some(default_sound) {
+            if current_sound.as_deref() != Some(default_sound) {
                 info!("No device detected. Playing default sound: {}", default_sound);
-                fade_state = FadeState::FadingOut { start_time: Instant::now(), target_sound: default_sound.to_string() };
+                pipeline.set_state(gst::State::Null)?;
+                filesrc.set_property("location", default_sound);
+                pipeline.set_state(gst::State::Playing)?;
+                current_sound = Some(default_sound.to_string());
+            }
+        }
+
+        if let Some(sound) = &current_sound {
+            if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
+                info!(
+                    current_sound = sound,
+                    playback_time_ms = position.mseconds(),
+                    "Current playback status"
+                );
             }
         }
 
