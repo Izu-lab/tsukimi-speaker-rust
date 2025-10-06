@@ -165,19 +165,23 @@ pub async fn connect_main(
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "https://tsukimi.paon.dev:50051";
+    let server_addr = "http://34.146.28.74:50051";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
     let channel = loop {
-        match Endpoint::from_static(server_addr).connect().await {
+        match Endpoint::from_static(server_addr)
+            .connect_timeout(Duration::from_secs(5))
+            .connect()
+            .await
+        {
             Ok(channel) => {
                 info!("Successfully connected to gRPC server.");
                 break channel;
             }
             Err(e) => {
                 error!(
-                    "Failed to connect to server: {}. Retrying in 5 seconds...",
+                    "Failed to connect to server: {:?}. Retrying in 5 seconds...",
                     e
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;

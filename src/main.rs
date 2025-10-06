@@ -92,9 +92,10 @@ async fn main() -> Result<()> {
     info!("Spawning bluetooth scanner task");
         let bluetooth_handle = {
             let my_address_clone = Arc::clone(&my_address);
+            let sound_map_clone = Arc::clone(&sound_map);
             tokio::spawn(
                 async move {
-                    if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone).await {
+                    if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone, sound_map_clone).await {
                         error!("Bluetooth scanner error: {:?}", e);
                     }
                 }
