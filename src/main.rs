@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
     // オーディオ再生タスクの結果を待つ
     match audio_handle.await {
         Ok(Ok(_)) => info!("Audio playback finished successfully."),
-        Ok(Err(e)) => error!("Audio playback error: {e}"),
+        Ok(Err(e)) => error!("Audio playback error: {}", format!("{:?}", e)),
         Err(e) => error!("Audio task panicked: {e}"),
     }
 
