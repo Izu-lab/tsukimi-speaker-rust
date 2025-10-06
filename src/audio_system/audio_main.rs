@@ -221,8 +221,10 @@ pub fn audio_main(
                         if current_sound.as_deref() != Some(new_sound.as_str()) {
                             info!("Switching sound to {}", new_sound);
                             pipeline.set_state(gst::State::Null)?;
+                            pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                             filesrc.set_property("location", new_sound.clone());
                             pipeline.set_state(gst::State::Playing)?;
+                            pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
                             current_sound = Some(new_sound.clone());
                         }
                     }
@@ -231,8 +233,10 @@ pub fn audio_main(
                     if current_sound.as_deref() != Some(default_sound) {
                         info!("No device detected. Playing default sound: {}", default_sound);
                         pipeline.set_state(gst::State::Null)?;
+                        pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                         filesrc.set_property("location", default_sound);
                         pipeline.set_state(gst::State::Playing)?;
+                        pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
                         current_sound = Some(default_sound.to_string());
                     }
                 }
