@@ -64,7 +64,9 @@ pub fn audio_main(
 
     // ## 再生開始の同期 ##
     pipeline.set_state(gst::State::Paused)?;
-    info!("Pipeline state set to Paused. Waiting for first time sync...");
+    info!("Waiting for pipeline to pause...");
+    pipeline.state(gst::ClockTime::from_seconds(5)); // 状態変更を待つ
+    info!("Pipeline is Paused. Waiting for first time sync...");
 
     let bus = pipeline.bus().unwrap();
 
