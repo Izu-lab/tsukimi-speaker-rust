@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
             tokio::spawn(
                 async move {
                     if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone).await {
-                        error!("Bluetooth scanner error: {}", e);
+                        error!("Bluetooth scanner error: {:?}", e);
                     }
                 }
                 .instrument(tracing::info_span!("bluetooth_scanner_task")), 

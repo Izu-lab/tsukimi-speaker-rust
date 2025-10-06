@@ -11,7 +11,10 @@ pub struct LocationRssi {
 /// クライアントからストリーミングされるメッセージ
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamDeviceInfoRequest {
-    #[prost(message, repeated, tag = "1")]
+    /// ユーザーのID
+    #[prost(string, tag = "1")]
+    pub user_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
     pub locations: ::prost::alloc::vec::Vec<LocationRssi>,
 }
 /// サーバーからストリーミングされるメッセージ

@@ -36,7 +36,10 @@ pub async fn bluetooth_scanner(
 
     let mut events = central.events().await?;
     info!("Scanning for BLE devices...");
-    central.start_scan(ScanFilter::default()).await?;
+    if let Err(e) = central.start_scan(ScanFilter::default()).await {
+        error!("Failed to start scan: {:?}", e);
+        return Err(e.into());
+    }
     time::sleep(Duration::from_secs(2)).await;
 
     info!("Started listening for BLE events.");

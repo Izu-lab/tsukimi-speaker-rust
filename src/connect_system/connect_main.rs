@@ -23,6 +23,7 @@ async fn run_device_service_client(
 ) {
     info!("Starting DeviceService client...");
     let sound_map_for_filter = Arc::clone(&sound_map);
+    let my_address_for_stream = Arc::clone(&my_address);
     let device_info_stream = BroadcastStream::new(rx)
         .filter_map(move |result| {
             let sound_map = Arc::clone(&sound_map_for_filter);
@@ -36,7 +37,7 @@ async fn run_device_service_client(
             })
         })
         .chunks_timeout(10, Duration::from_millis(100))
-        .map(|infos| {
+        .map(move |infos| {
             let locations = infos
                 .into_iter()
                 .map(|info| LocationRssi {
@@ -44,8 +45,15 @@ async fn run_device_service_client(
                     rssi: info.rssi as i32,
                 })
                 .collect();
-            debug!(?locations, "Sending device info to server");
-            StreamDeviceInfoRequest { locations }
+
+            let user_id = my_address_for_stream
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| "".to_string());
+
+            debug!(?locations, %user_id, "Sending device info to server");
+            StreamDeviceInfoRequest { user_id, locations }
         });
 
     match client.stream_device_info(device_info_stream).await {
@@ -157,7 +165,7 @@ pub async fn connect_main(
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "http://34.85.89.86:50051";
+    let server_addr = "https://tsukimi.paon.dev:50051";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
