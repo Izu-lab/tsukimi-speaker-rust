@@ -265,19 +265,19 @@ pub fn audio_main(
         if let Some(device) = best_device {
             let sound_map = sound_map.lock().unwrap();
             if let Some(new_sound) = sound_map.get(&device.address) {
-                if matches!(fade_state, FadeState::None) && current_sound.as_deref() != Some(new_sound.as_str()) {
-                    info!("Switching sound");
+                if matches!(&fade_state, FadeState::None) && current_sound.as_deref() != Some(new_sound.as_str()) {
+                    info!("Switching sound to {}", new_sound);
                     fade_state = FadeState::FadingOut { start_time: Instant::now(), target_sound: new_sound.clone() };
                 }
-                if matches!(fade_state, FadeState::None) {
+                if matches!(&fade_state, FadeState::None) {
                     update_volume_from_rssi(&device, &volume, &sound_setting);
                 }
-            } else {
-                if current_sound.is_some() && matches!(fade_state, FadeState::None) {
-                    info!("No mapped devices found, stopping playback.");
-                    pipeline.set_state(gst::State::Ready)?;
-                    current_sound = None;
-                }
+            }
+        } else {
+            let default_sound = "tsukimi-main.mp3";
+            if matches!(&fade_state, FadeState::None) && current_sound.as_deref() != Some(default_sound) {
+                info!("No device detected. Playing default sound: {}", default_sound);
+                fade_state = FadeState::FadingOut { start_time: Instant::now(), target_sound: default_sound.to_string() };
             }
         }
 
