@@ -128,6 +128,23 @@ pub fn audio_main(
                 }
             }
             PlaybackState::Playing => {
+                // --- 他の処理は変更なし ---
+                if let Ok(new_setting) = sound_setting_rx.try_recv() {
+                    info!(?new_setting, "Received new sound setting");
+                    *sound_setting.lock().unwrap() = new_setting;
+                }
+                while let Ok(device_info) = rx.try_recv() {
+                    detected_devices.insert(device_info.address.clone(), device_info);
+                }
+                if Instant::now().duration_since(last_cleanup) > CLEANUP_INTERVAL {
+                    let initial_count = detected_devices.len();
+                    detected_devices.retain(|_, device_info| Instant::now().duration_since(device_info.last_seen) < CLEANUP_INTERVAL);
+                    if initial_count != detected_devices.len() {
+                        debug!("Cleaned up old devices.");
+                    }
+                    last_cleanup = Instant::now();
+                }
+
                 if let Ok(server_time_ns) = time_sync_rx.try_recv() {
                     // --- 実時間ベースの同期ロジック ---
                     let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
@@ -173,83 +190,60 @@ pub fn audio_main(
                         "Time sync processed."
                     );
                 }
-            }
-        }
 
-        // --- 他の処理は変更なし ---
-        if let Ok(new_setting) = sound_setting_rx.try_recv() {
-            info!(?new_setting, "Received new sound setting");
-            *sound_setting.lock().unwrap() = new_setting;
-        }
-        while let Ok(device_info) = rx.try_recv() {
-            detected_devices.insert(device_info.address.clone(), device_info);
-        }
-        if Instant::now().duration_since(last_cleanup) > CLEANUP_INTERVAL {
-            let initial_count = detected_devices.len();
-            detected_devices.retain(|_, device_info| Instant::now().duration_since(device_info.last_seen) < CLEANUP_INTERVAL);
-            if initial_count != detected_devices.len() {
-                debug!("Cleaned up old devices.");
-            }
-            last_cleanup = Instant::now();
-        }
-            let best_device = {
-                let sound_map = sound_map.lock().unwrap();
-                let my_addr_opt_clone = my_address.lock().unwrap().clone();
-                let points = *current_points.lock().unwrap();
+                let best_device = {
+                    let sound_map = sound_map.lock().unwrap();
+                    let my_addr_opt_clone = my_address.lock().unwrap().clone();
+                    let points = *current_points.lock().unwrap();
 
-                let mut candidates: Vec<_> = detected_devices
-                    .values()
-                    .filter(|d| sound_map.contains_key(&d.address))
-                    .collect();
+                    let mut candidates: Vec<_> = detected_devices
+                        .values()
+                        .filter(|d| sound_map.contains_key(&d.address))
+                        .collect();
 
-                // ポイントとRSSIでソート
-                // 1. ポイントが高い順 (自分自身のデバイスであれば現在のポイント、そうでなければ0)
-                // 2. RSSIが高い順
-                candidates.sort_by(|a, b| {
-                    let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
-                    let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
-                    b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
-                });
+                    // ポイントとRSSIでソート
+                    // 1. ポイントが高い順 (自分自身のデバイスであれば現在のポイント、そうでなければ0)
+                    // 2. RSSIが高い順
+                    candidates.sort_by(|a, b| {
+                        let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
+                        let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
+                        b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
+                    });
 
-                candidates.first().cloned()
-            };
-        if let Some(device) = best_device {
-            let sound_map = sound_map.lock().unwrap();
-            if let Some(new_sound) = sound_map.get(&device.address) {
-                if current_sound.as_deref() != Some(new_sound.as_str()) {
-                    info!("Switching sound to {}", new_sound);
-                    pipeline.set_state(gst::State::Null)?;
-                    filesrc.set_property("location", new_sound.clone());
-                    pipeline.set_state(gst::State::Playing)?;
-                    current_sound = Some(new_sound.clone());
-                    info!("Pipeline state changed to Playing");
-                    let current_location = filesrc.property::<String>("location");
-                    info!("filesrc location property: {:?}", current_location);
-                    info!("Pipeline current state: {:?}", pipeline.current_state());
+                    candidates.first().cloned()
+                };
+
+                if let Some(device) = best_device {
+                    let sound_map = sound_map.lock().unwrap();
+                    if let Some(new_sound) = sound_map.get(&device.address) {
+                        if current_sound.as_deref() != Some(new_sound.as_str()) {
+                            info!("Switching sound to {}", new_sound);
+                            pipeline.set_state(gst::State::Null)?;
+                            filesrc.set_property("location", new_sound.clone());
+                            pipeline.set_state(gst::State::Playing)?;
+                            current_sound = Some(new_sound.clone());
+                        }
+                    }
+                } else {
+                    let default_sound = "tsukimi-main.mp3";
+                    if current_sound.as_deref() != Some(default_sound) {
+                        info!("No device detected. Playing default sound: {}", default_sound);
+                        pipeline.set_state(gst::State::Null)?;
+                        filesrc.set_property("location", default_sound);
+                        pipeline.set_state(gst::State::Playing)?;
+                        current_sound = Some(default_sound.to_string());
+                    }
                 }
-            }
-        } else {
-            let default_sound = "tsukimi-main.mp3";
-            if current_sound.as_deref() != Some(default_sound) {
-                info!("No device detected. Playing default sound: {}", default_sound);
-                pipeline.set_state(gst::State::Null)?;
-                filesrc.set_property("location", default_sound);
-                pipeline.set_state(gst::State::Playing)?;
-                current_sound = Some(default_sound.to_string());
-                info!("Pipeline state changed to Playing");
-                let current_location = filesrc.property::<String>("location");
-                info!("filesrc location property: {:?}", current_location);
-                info!("Pipeline current state: {:?}", pipeline.current_state());
-            }
-        }
 
-        if let Some(sound) = &current_sound {
-            if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
-                info!(
-                    current_sound = sound,
-                    playback_time_ms = position.mseconds(),
-                    "Current playback status"
-                );
+                if let Some(sound) = &current_sound {
+                    if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
+                        info!(
+                            current_sound = sound,
+                            playback_time_ms = position.mseconds(),
+                            "Current playback status"
+                        );
+                    }
+                }
             }
         }
 
