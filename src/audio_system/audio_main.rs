@@ -42,7 +42,7 @@ pub fn audio_main(
 
 
 
-    let mut current_sound = None::<String>;
+    let mut current_sound = Some("tsukimi-main.mp3".to_string());
     let mut detected_devices = HashMap::<String, Arc<DeviceInfo>>::new();
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
@@ -70,6 +70,10 @@ pub fn audio_main(
 
     let bus = pipeline.bus().unwrap();
 
+    // 時刻同期待機のタイムアウト
+    let sync_wait_start = Instant::now();
+    const SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
     'main_loop: loop {
         // --- GStreamerメッセージ処理 ---
         while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
@@ -95,6 +99,20 @@ pub fn audio_main(
         // --- 再生状態に応じた処理 ---
         match playback_state {
             PlaybackState::WaitingForFirstSync => {
+                // 時刻同期のタイムアウトチェック
+                if Instant::now().duration_since(sync_wait_start) > SYNC_TIMEOUT {
+                    warn!("Time sync timeout. Starting playback without sync.");
+                    pipeline.set_state(gst::State::Playing)?;
+                    info!("Pipeline state set to Playing (no sync).");
+
+                    // 時間の基準点を記録（現在時刻をベースに）
+                    playback_start_time = Instant::now();
+                    initial_server_time_ns = 0;
+
+                    playback_state = PlaybackState::Playing;
+                    continue;
+                }
+
                 if let Ok(server_time_ns) = time_sync_rx.try_recv() {
                     info!(server_time_ns, "Received first time sync. Starting playback.");
 
@@ -223,9 +241,12 @@ pub fn audio_main(
                             pipeline.set_state(gst::State::Null)?;
                             pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                             filesrc.set_property("location", new_sound.clone());
-                            pipeline.set_state(gst::State::Playing)?;
-                            pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
+                            pipeline.set_state(gst::State::Paused)?;
+                            pipeline.state(gst::ClockTime::from_seconds(5)); // Paused状態への遷移を待つ
                             current_sound = Some(new_sound.clone());
+                            // サウンド切り替え後は再同期が必要
+                            playback_state = PlaybackState::WaitingForFirstSync;
+                            info!("Sound switched. Waiting for next time sync to resume playback.");
                         }
                     }
                 } else {
@@ -235,9 +256,12 @@ pub fn audio_main(
                         pipeline.set_state(gst::State::Null)?;
                         pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                         filesrc.set_property("location", default_sound);
-                        pipeline.set_state(gst::State::Playing)?;
-                        pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
+                        pipeline.set_state(gst::State::Paused)?;
+                        pipeline.state(gst::ClockTime::from_seconds(5)); // Paused状態への遷移を待つ
                         current_sound = Some(default_sound.to_string());
+                        // サウンド切り替え後は再同期が必要
+                        playback_state = PlaybackState::WaitingForFirstSync;
+                        info!("Switched to default sound. Waiting for next time sync to resume playback.");
                     }
                 }
 
