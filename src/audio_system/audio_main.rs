@@ -222,6 +222,10 @@ pub fn audio_main(
                     filesrc.set_property("location", new_sound.clone());
                     pipeline.set_state(gst::State::Playing)?;
                     current_sound = Some(new_sound.clone());
+                    info!("Pipeline state changed to Playing");
+                    let current_location = filesrc.property::<String>("location");
+                    info!("filesrc location property: {:?}", current_location);
+                    info!("Pipeline current state: {:?}", pipeline.current_state());
                 }
             }
         } else {
@@ -232,6 +236,10 @@ pub fn audio_main(
                 filesrc.set_property("location", default_sound);
                 pipeline.set_state(gst::State::Playing)?;
                 current_sound = Some(default_sound.to_string());
+                info!("Pipeline state changed to Playing");
+                let current_location = filesrc.property::<String>("location");
+                info!("filesrc location property: {:?}", current_location);
+                info!("Pipeline current state: {:?}", pipeline.current_state());
             }
         }
 
