@@ -225,10 +225,9 @@ pub fn audio_main(
                 let elapsed = start_time.elapsed();
                 if elapsed >= FADE_DURATION {
                     volume.set_property("volume", 0.0);
-                    debug!("Switching sound to {}", target_sound);
-                    pipeline.set_state(gst::State::Ready)?;
+                    info!("Switching sound to {}", target_sound);
+                    pipeline.set_state(gst::State::Null)?;
                     filesrc.set_property("location", target_sound.clone());
-                    pipeline.seek_simple(gst::SeekFlags::FLUSH, gst::ClockTime::from_seconds(0))?;
                     pipeline.set_state(gst::State::Playing)?;
                     current_sound = Some(target_sound.clone());
                     let target_volume = {
