@@ -124,7 +124,7 @@ pub fn audio_main(
     const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
     // 最初のパイプラインを構築
-    let (mut pipeline, mut bus, mut pitch, _filesrc, _volume) = build_pipeline(&current_sound)?;
+    let (mut pipeline, mut bus, mut pitch, mut filesrc, _volume) = build_pipeline(&current_sound)?;
     pipeline.set_state(gst::State::Paused)?;
     wait_for_state(&pipeline, gst::State::Paused, Duration::from_secs(10), "initial_pause");
 
@@ -288,40 +288,49 @@ pub fn audio_main(
 
                 // 音源切替（サーバー時間で同期）
                 if desired_sound != current_sound {
-                    info!(from = %current_sound, to = %desired_sound, "Switching sound");
-                    // 現在のパイプライン停止
-                    if let Err(e) = pipeline.set_state(gst::State::Null) {
-                        error!(%e, "Failed to set old pipeline to Null");
+                    info!(from = %current_sound, to = %desired_sound, "Switching sound (in-place)");
+
+                    // 事前チェック
+                    if !desired_sound.is_empty() {
+                        let sound_path = std::path::Path::new(&desired_sound);
+                        if !sound_path.exists() {
+                            error!("Sound file does not exist: {}", desired_sound);
+                            continue;
+                        }
+                    } else {
+                        warn!("Sound file name is empty, skipping switch.");
+                        continue;
                     }
-                    let _ = pipeline.state(gst::ClockTime::from_seconds(2));
-                    drop(pipeline);
-                    drop(bus);
 
-                    // 新パイプライン
-                    let (new_pipeline, new_bus, new_pitch, _new_filesrc, _new_volume) = build_pipeline(&desired_sound)?;
-                    let _ = new_pipeline.set_state(gst::State::Paused);
-                    wait_for_state(&new_pipeline, gst::State::Paused, Duration::from_secs(10), "switch_pause");
+                    // 一時停止（Nullにしない）
+                    if let Err(e) = pipeline.set_state(gst::State::Paused) {
+                        error!(%e, "Failed to pause pipeline for switch");
+                        continue;
+                    }
+                    wait_for_state(&pipeline, gst::State::Paused, Duration::from_secs(5), "switch_to_paused");
 
+                    // ロケーション更新
+                    filesrc.set_property("location", &desired_sound);
+                    info!("filesrc location updated");
+
+                    // サーバー時間にシーク（duration更新を待ちながら）
                     if let Some(server_time_ns) = last_server_time_ns {
-                        let _ = seek_to_server_time(&new_pipeline, &new_bus, server_time_ns);
+                        let _ = seek_to_server_time(&pipeline, &bus, server_time_ns);
                         playback_start_time = Instant::now();
                         initial_server_time_ns = server_time_ns;
                         current_rate = 1.0;
                     } else {
-                        // サーバー時間が未取得の場合は頭出しなし
                         playback_start_time = Instant::now();
                         initial_server_time_ns = 0;
                         current_rate = 1.0;
                     }
 
-                    if let Err(e) = new_pipeline.set_state(gst::State::Playing) {
-                        error!(%e, "Failed to set new pipeline to Playing");
+                    // 再生再開
+                    if let Err(e) = pipeline.set_state(gst::State::Playing) {
+                        error!(%e, "Failed to resume Playing after switch");
+                        continue;
                     }
 
-                    // 差し替え
-                    pipeline = new_pipeline;
-                    bus = new_bus;
-                    pitch = new_pitch;
                     current_sound = desired_sound;
                 }
             }
