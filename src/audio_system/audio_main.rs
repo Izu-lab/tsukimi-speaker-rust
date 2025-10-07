@@ -26,7 +26,6 @@ struct PipelineState {
     pipeline: gst::Pipeline,
     bus: gst::Bus,
     pitch: Option<gst::Element>,
-    filesrc: gst::Element,
     volume: gst::Element,
 }
 
@@ -48,10 +47,9 @@ fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
         .downcast::<gst::Pipeline>()
         .map_err(|_| anyhow!("Failed to downcast to Pipeline"))?;
     let bus = pipeline.bus().ok_or_else(|| anyhow!("Failed to get bus from pipeline"))?;
-    let filesrc = pipeline.by_name("src").ok_or_else(|| anyhow!("filesrc not found"))?;
     let volume = pipeline.by_name("vol").ok_or_else(|| anyhow!("volume not found"))?;
     let pitch = pipeline.by_name("pch");
-    Ok(PipelineState { pipeline, bus, pitch, filesrc, volume })
+    Ok(PipelineState { pipeline, bus, pitch, volume })
 }
 
 fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duration, label: &str) -> bool {
@@ -67,56 +65,16 @@ fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duratio
                 debug!(?target, label, "Reached target state");
                 return true;
             }
-            (Ok(_), c, p) => {
-                // 状態遷移中のログは削除（冗長）
+            (Ok(_), _c, _p) => {
+                // 状態遷移中、ポーリング間隔を短縮
             }
             (Err(e), c, p) => {
                 error!(?e, ?c, ?p, label, "Error while waiting for state");
                 return false;
             }
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(20)); // 50ms → 20ms に短縮
     }
-}
-
-fn wait_for_buffering(bus: &gst::Bus, timeout: Duration, label: &str) -> bool {
-    let start = Instant::now();
-    let mut buffering_complete = false;
-    let mut last_logged_percent = 0;
-
-    while Instant::now().duration_since(start) < timeout {
-        while let Some(msg) = bus.timed_pop(gst::ClockTime::from_nseconds(50_000_000)) {
-            use gst::MessageView;
-            match msg.view() {
-                MessageView::Buffering(buffering_msg) => {
-                    let percent = buffering_msg.percent();
-                    // 10%刻みでのみログ出力
-                    if percent / 10 > last_logged_percent / 10 || percent >= 100 {
-                        debug!(?percent, label, "Buffering progress");
-                        last_logged_percent = percent;
-                    }
-                    if percent >= 100 {
-                        buffering_complete = true;
-                        debug!(label, "Buffering complete");
-                        return true;
-                    }
-                }
-                MessageView::Error(err) => {
-                    error!(error=%err.error(), label, "Error during buffering");
-                    return false;
-                }
-                _ => {}
-            }
-        }
-        if buffering_complete {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-
-    // タイムアウトしてもバッファリングメッセージが来ない場合は続行
-    debug!(label, "Buffering check timeout, continuing anyway");
-    true
 }
 
 fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns: u64) -> Result<()> {
@@ -130,8 +88,8 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
                 pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, seek_time)?;
                 if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
                     debug!(?seek_time, "Seek completed");
-                    // FLUSHシーク後、パイプラインが完全に安定するまで少し待つ
-                    std::thread::sleep(Duration::from_millis(100));
+                    // FLUSHシーク後の待機時間を短縮
+                    std::thread::sleep(Duration::from_millis(50)); // 100ms → 50ms
                 } else {
                     warn!(?seek_time, "AsyncDone not received after seek");
                 }
@@ -142,7 +100,7 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
             warn!("Duration unavailable for seek (timeout)");
             return Ok(());
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(20)); // 50ms → 20ms
     }
 }
 
@@ -163,8 +121,8 @@ pub fn audio_main(
 
     let sound_setting = Arc::new(Mutex::new(SoundSetting {
         id: "default".to_string(),
-        max_volume_rssi: 0.0,  // 未使用（音量制御には使わない）
-        min_volume_rssi: 0.0,  // 未使用（音量制御には使わない）
+        max_volume_rssi: 0.0,
+        min_volume_rssi: 0.0,
         max_volume: 1.0,
         min_volume: 0.0,
         is_muted: false,
@@ -187,7 +145,6 @@ pub fn audio_main(
 
     // 音源切り替え用のチャネル
     let (switch_tx, mut switch_rx) = mpsc::channel::<PipelineState>(1);
-    let (switch_request_tx, mut switch_request_rx) = mpsc::channel::<SwitchRequest>(1);
 
     // 同期関連
     let mut playback_start_time = Instant::now();
@@ -206,9 +163,9 @@ pub fn audio_main(
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 
     'main_loop: loop {
-        // バス処理（アクティブ優先、スタンバイも確認）
+        // バス処理（アクティブ優先、スタンバイも確認）- タイムアウトを短縮
         if let Some(ref act) = active {
-            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(5)) {
+            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(1)) { // 5ms → 1ms
                 use gst::MessageView;
                 match msg.view() {
                     MessageView::Eos(_) => {
@@ -224,7 +181,7 @@ pub fn audio_main(
             }
         }
         if let Some(ref stdb) = standby {
-            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_mseconds(1)) {
+            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_nseconds(500_000)) { // 1ms → 0.5ms
                 use gst::MessageView;
                 match msg.view() {
                     MessageView::Error(err) => {
@@ -490,6 +447,10 @@ pub fn audio_main(
                 }
             }
         }
+
+        // メインループの sleep を削除し、代わりに短い待機のみ
+        // イベント駆動型にすることで、レスポンス性を向上
+        std::thread::sleep(Duration::from_millis(1)); // 最小限の待機のみ
     }
 
     // 終了処理

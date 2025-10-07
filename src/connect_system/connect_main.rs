@@ -21,7 +21,7 @@ fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
         "fire_rat_robe" => "tsukimi-hotoke.mp3",
         "dragons_jewel" => "tsukimi-hotoke.mp3",
         "swallows_cowry" => "tsukimi-hotoke.mp3",
-        _ => "tsukimi-main.mp3", // 未知の place_type のためのデフォルトサウンド
+        _ => "tsukimi-main.mp3",
     }
 }
 
@@ -49,7 +49,7 @@ async fn run_device_service_client(
                 }
             })
         })
-        .chunks_timeout(10, Duration::from_millis(100))
+        .chunks_timeout(10, Duration::from_millis(50)) // 100ms → 50ms に短縮
         .map(move |infos| {
             let locations: Vec<LocationRssi> = infos
                 .into_iter()
@@ -90,18 +90,19 @@ async fn run_device_service_client(
                                 Event::LocationUpdate(location_update) => {
                                     info!(?location_update, "LocationUpdate received");
                                     let mut sound_map = sound_map.lock().unwrap();
-                                    info!(old_sound_map_size = sound_map.len(), "Before clearing sound_map");
-                                    sound_map.clear();
-                                    for loc in location_update.locations {
+                                    info!(old_sound_map_size = sound_map.len(), "Before updating sound_map");
+
+                                    // 差分更新：新しいロケーションをマップに格納
+                                    let mut new_addresses = std::collections::HashSet::new();
+                                    for loc in &location_update.locations {
+                                        new_addresses.insert(loc.address.clone());
                                         let sound_file = get_sound_file_from_place_type(&loc.place_type);
                                         info!(
                                             address = %loc.address,
                                             place_type = %loc.place_type,
                                             sound_file = %sound_file,
-                                            is_empty = sound_file.is_empty(),
                                             "Processing location entry"
                                         );
-                                        // 空文字列のサウンドファイルは挿入しない
                                         if !sound_file.is_empty() {
                                             sound_map.insert(loc.address.clone(), sound_file.to_string());
                                         } else {
@@ -112,7 +113,11 @@ async fn run_device_service_client(
                                             );
                                         }
                                     }
-                                    info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with full contents");
+
+                                    // 新しいリストに存在しないアドレスを削除
+                                    sound_map.retain(|addr, _| new_addresses.contains(addr));
+
+                                    info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with differential update");
                                 }
                                 Event::PointUpdate(point_update) => {
                                     debug!(?point_update, "PointUpdate received");
