@@ -315,9 +315,15 @@ pub fn audio_main(
                         let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
                         let diff_real_ns = server_elapsed - client_elapsed;
                         let diff_abs_s = (diff_real_ns.abs() as f64) / 1e9;
-                        let new_rate: f64 = if diff_abs_s > 1.0 {
-                            warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected, seeking active.");
+                        let new_rate: f64 = if diff_abs_s > 3.0 {
+                            warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected (>3s), seeking active.");
                             let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
+                            // 独自シーク位置も更新
+                            if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
+                                if duration.nseconds() > 0 {
+                                    current_seek_position_ns = server_time_ns % duration.nseconds();
+                                }
+                            }
                             1.0
                         } else {
                             let diff_s = diff_real_ns as f64 / 1e9;
@@ -354,10 +360,47 @@ pub fn audio_main(
                     candidates.first().cloned()
                 };
 
-                let desired_sound = if let Some(device) = best_device {
+                // 全てのLocationが閾値を下回っているかチェック
+                let all_below_threshold = {
                     let sound_map = sound_map.lock().unwrap();
-                    sound_map.get(&device.address).cloned().unwrap_or_else(|| default_sound.clone())
-                } else { default_sound.clone() };
+
+                    // 現在再生中のサウンドに対応するデバイスを探す
+                    let current_sound_device = detected_devices.values()
+                        .find(|d| {
+                            sound_map.get(&d.address)
+                                .map(|sound| sound == &current_sound)
+                                .unwrap_or(false)
+                        });
+
+                    // 現在再生中のサウンドに対応するデバイスが閾値を下回っているかチェック
+                    if let Some(device) = current_sound_device {
+                        // 現在のデバイスが閾値を下回っている場合のみtrue
+                        device.rssi <= RSSI_THRESHOLD
+                    } else if current_sound == default_sound {
+                        // すでにデフォルトサウンドの場合、閾値チェックをスキップ
+                        false
+                    } else {
+                        // 現在のサウンドに対応するデバイスが見つからない場合（通信途絶など）
+                        // 登録されている全デバイスが閾値を下回っているかチェック
+                        let registered_devices: Vec<_> = detected_devices.values()
+                            .filter(|d| sound_map.contains_key(&d.address))
+                            .collect();
+
+                        !registered_devices.is_empty() && registered_devices.iter().all(|d| d.rssi <= RSSI_THRESHOLD)
+                    }
+                };
+
+                let desired_sound = if let Some(device) = best_device {
+                    // 閾値を超えたデバイスがある場合、そのデバイスのサウンドを使用
+                    let sound_map = sound_map.lock().unwrap();
+                    sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone())
+                } else if all_below_threshold {
+                    // 現在のLocationが閾値を下回った場合のみデフォルトサウンドに切り替え
+                    default_sound.clone()
+                } else {
+                    // それ以外の場合（デバイスが検出されていない等）は現在のサウンドを維持
+                    current_sound.clone()
+                };
 
                 // 非同期切り替えの完了チェック
                 if let Ok(new_pipeline) = switch_rx.try_recv() {
