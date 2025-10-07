@@ -34,13 +34,17 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let sink = sink_name();
     let desc = format!(
         concat!(
-            "interaudiosrc channel=a ! audioconvert ! audioresample ! ",
+            "interaudiosrc channel=a blocksize=8192 ! audioconvert ! audioresample ! ",
             "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
-            "volume name=volA ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! mix. ",
-            "interaudiosrc channel=b ! audioconvert ! audioresample ! ",
+            "volume name=volA ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
+            "interaudiosrc channel=b blocksize=8192 ! audioconvert ! audioresample ! ",
             "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
-            "volume name=volB ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! mix. ",
-            "audiomixer name=mix latency=50000000 ! audioconvert ! {}"
+            "volume name=volB ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
+            "audiomixer name=mix start-time-selection=first latency=200000000 ! ",
+            "audioconvert ! audioresample ! ",
+            "capsfilter caps=\"audio/x-raw,format=S16LE,rate=44100,channels=2\" ! ",
+            "queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! ",
+            "{} buffer-time=200000 latency-time=20000"
         ),
         sink
     );
@@ -48,6 +52,13 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let bus = pipeline.bus().ok_or_else(|| anyhow!("mixer bus missing"))?;
     let vol_a = pipeline.by_name("volA").ok_or_else(|| anyhow!("volA missing"))?;
     let vol_b = pipeline.by_name("volB").ok_or_else(|| anyhow!("volB missing"))?;
+
+    // audiomixerの設定を最適化
+    if let Some(mixer) = pipeline.by_name("mix") {
+        // バッファリングを安定させる
+        mixer.set_property("output-buffer-duration", 200_000_000u64); // 200ms
+    }
+
     Ok(MixerState { pipeline, bus, vol_a, vol_b })
 }
 
@@ -55,10 +66,10 @@ fn build_decoder_pipeline(sound_path: &str, channel: &str) -> Result<DecoderStat
     // pitch はテンポ補正用（存在しない環境ではオプション）
     let desc = format!(
         concat!(
-            "filesrc location={} ! decodebin ! audioconvert ! audioresample ! ",
+            "filesrc location={} blocksize=8192 ! decodebin ! audioconvert ! audioresample ! ",
             "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
-            "pitch name=pch{} ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! ",
-            "interaudiosink channel={}"
+            "pitch name=pch{} ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! ",
+            "interaudiosink channel={} blocksize=8192"
         ),
         sound_path,
         channel,
