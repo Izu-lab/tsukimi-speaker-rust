@@ -38,7 +38,7 @@ async fn run_device_service_client(
         })
         .chunks_timeout(10, Duration::from_millis(100))
         .map(move |infos| {
-            let locations = infos
+            let locations: Vec<LocationRssi> = infos
                 .into_iter()
                 .map(|info| LocationRssi {
                     address: info.address.clone(),
@@ -52,7 +52,12 @@ async fn run_device_service_client(
                 .clone()
                 .unwrap_or_else(|| "".to_string());
 
-            debug!(?locations, %user_id, "Sending device info to server");
+            info!(
+                ?locations,
+                %user_id,
+                locations_count = locations.len(),
+                "Sending device info to server"
+            );
             StreamDeviceInfoRequest { user_id, locations }
         });
 
