@@ -348,9 +348,11 @@ pub fn audio_main(
                                 error!("Failed to set pipeline to Playing state: {}", e);
                                 continue;
                             }
+                            info!("Set pipeline state to Playing, waiting for transition...");
 
                             // Playing状態への遷移を待つ（busメッセージもチェック）
                             let state_change_timeout = Instant::now();
+                            let mut has_error = false;
                             loop {
                                 // busメッセージをチェック
                                 while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
@@ -362,6 +364,7 @@ pub fn audio_main(
                                                 err.error(),
                                                 err.debug()
                                             );
+                                            has_error = true;
                                             break;
                                         }
                                         MessageView::Warning(warn) => {
@@ -371,8 +374,21 @@ pub fn audio_main(
                                                 warn.debug()
                                             );
                                         }
+                                        MessageView::StateChanged(sc) => {
+                                            debug!(
+                                                "State changed: {:?} -> {:?} (source: {:?})",
+                                                sc.old(),
+                                                sc.current(),
+                                                sc.src().map(|s| s.name())
+                                            );
+                                        }
                                         _ => {}
                                     }
+                                }
+
+                                if has_error {
+                                    error!("Breaking due to GStreamer error");
+                                    break;
                                 }
 
                                 // 状態を確認
@@ -381,26 +397,43 @@ pub fn audio_main(
                                         info!("Pipeline successfully transitioned to Playing state");
                                         break;
                                     }
-                                    (Ok(gst::StateChangeSuccess::Async), _, _) => {
+                                    (Ok(gst::StateChangeSuccess::Async), current_state, _) => {
                                         // まだ遷移中
-                                        if Instant::now().duration_since(state_change_timeout) > std::time::Duration::from_secs(5) {
-                                            error!("Timeout waiting for Playing state");
+                                        let elapsed = Instant::now().duration_since(state_change_timeout);
+                                        debug!(
+                                            "State transition in progress (Async), current: {:?}, elapsed: {:?}",
+                                            current_state,
+                                            elapsed
+                                        );
+                                        if elapsed > std::time::Duration::from_secs(5) {
+                                            error!("Timeout waiting for Playing state after {:?}", elapsed);
                                             break;
                                         }
                                     }
                                     (Ok(state), current, _) => {
-                                        warn!("Unexpected state change result: {:?}, current: {:?}", state, current);
+                                        warn!(
+                                            "Unexpected state change result: {:?}, current: {:?}",
+                                            state, current
+                                        );
                                         if Instant::now().duration_since(state_change_timeout) > std::time::Duration::from_secs(5) {
+                                            error!("Timeout with unexpected state");
                                             break;
                                         }
                                     }
-                                    (Err(e), _, _) => {
-                                        error!("Failed to wait for Playing state: {}", e);
+                                    (Err(e), current, _) => {
+                                        error!(
+                                            "Failed to wait for Playing state: {}, current: {:?}",
+                                            e, current
+                                        );
                                         break;
                                     }
                                 }
                                 std::thread::sleep(std::time::Duration::from_millis(50));
                             }
+
+                            // 最終的な状態を確認
+                            let (_, final_state, _) = pipeline.state(gst::ClockTime::ZERO);
+                            info!("Final pipeline state after transition attempt: {:?}", final_state);
 
                             current_sound = Some(new_sound.clone());
                             // 時間の基準点をリセット
