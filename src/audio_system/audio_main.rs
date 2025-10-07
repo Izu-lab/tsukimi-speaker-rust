@@ -58,11 +58,11 @@ fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duratio
         let (ret, current, pending) = pipeline.state(gst::ClockTime::from_mseconds(0));
         match (ret, current, pending) {
             (Ok(_), c, gst::State::VoidPending) if c == target => {
-                info!(?target, label, "Reached target state");
+                debug!(?target, label, "Reached target state");
                 return true;
             }
             (Ok(_), c, p) => {
-                debug!(?c, ?p, label, "Waiting for state");
+                // 状態遷移中のログは削除（冗長）
             }
             (Err(e), c, p) => {
                 error!(?e, ?c, ?p, label, "Error while waiting for state");
@@ -76,6 +76,7 @@ fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duratio
 fn wait_for_buffering(bus: &gst::Bus, timeout: Duration, label: &str) -> bool {
     let start = Instant::now();
     let mut buffering_complete = false;
+    let mut last_logged_percent = 0;
 
     while Instant::now().duration_since(start) < timeout {
         while let Some(msg) = bus.timed_pop(gst::ClockTime::from_nseconds(50_000_000)) {
@@ -83,10 +84,14 @@ fn wait_for_buffering(bus: &gst::Bus, timeout: Duration, label: &str) -> bool {
             match msg.view() {
                 MessageView::Buffering(buffering_msg) => {
                     let percent = buffering_msg.percent();
-                    debug!(?percent, label, "Buffering progress");
+                    // 10%刻みでのみログ出力
+                    if percent / 10 > last_logged_percent / 10 || percent >= 100 {
+                        debug!(?percent, label, "Buffering progress");
+                        last_logged_percent = percent;
+                    }
                     if percent >= 100 {
                         buffering_complete = true;
-                        info!(label, "Buffering complete");
+                        debug!(label, "Buffering complete");
                         return true;
                     }
                 }
@@ -104,7 +109,7 @@ fn wait_for_buffering(bus: &gst::Bus, timeout: Duration, label: &str) -> bool {
     }
 
     // タイムアウトしてもバッファリングメッセージが来ない場合は続行
-    warn!(label, "Buffering check timeout, continuing anyway");
+    debug!(label, "Buffering check timeout, continuing anyway");
     true
 }
 
@@ -118,7 +123,7 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
                 let seek_time = gst::ClockTime::from_nseconds(seek_time_ns);
                 pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, seek_time)?;
                 if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
-                    info!(?seek_time, "Seek completed (AsyncDone)");
+                    debug!(?seek_time, "Seek completed");
                     // FLUSHシーク後、パイプラインが完全に安定するまで少し待つ
                     std::thread::sleep(Duration::from_millis(100));
                 } else {
@@ -317,7 +322,7 @@ pub fn audio_main(
                 } else { default_sound.clone() };
 
                 if desired_sound != current_sound {
-                    info!(from=%current_sound, to=%desired_sound, "Parallel switch start");
+                    info!(from=%current_sound, to=%desired_sound, "🔄 音源切り替え開始");
                     switching = true;
 
                     // スタンバイパイプラインがあれば停止して破棄
@@ -327,14 +332,17 @@ pub fn audio_main(
                     }
 
                     // 新しいパイプラインを構築
+                    info!("📦 新しいパイプラインを構築中...");
                     let next = build_pipeline(&desired_sound)?;
 
                     // まずPausedにしてシーク
+                    info!("⏸️  パイプラインをPaused状態に設定");
                     let _ = next.pipeline.set_state(gst::State::Paused);
                     wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(10), "standby_pause");
 
                     // シークを実行（Paused状態で）
                     if let Some(server_time_ns) = last_server_time_ns {
+                        info!("⏩ サーバー時間に同期中...");
                         let _ = seek_to_server_time(&next.pipeline, &next.bus, server_time_ns);
                     }
 
@@ -342,19 +350,21 @@ pub fn audio_main(
 
                     // volume=0にしてからPlayingに移行
                     set_volume(&next.volume, 0.0);
+                    info!("▶️  パイプラインをPlaying状態に設定（音量0）");
                     let _ = next.pipeline.set_state(gst::State::Playing);
 
                     // Playing状態になるまで待つ
                     wait_for_state(&next.pipeline, gst::State::Playing, Duration::from_secs(5), "standby_playing");
 
                     // パイプラインが完全に安定するまで追加で待機
-                    // デコードウォームアップ: FLUSHシーク後のバッファ再充填を待つ
+                    info!("⏳ パイプライン安定化待機中...");
                     std::thread::sleep(Duration::from_millis(500));
 
                     // バッファリング状態を確認（オプション）
                     wait_for_buffering(&next.bus, Duration::from_secs(3), "warmup_buffering");
 
                     // クロスフェード（短時間）
+                    info!("🎚️  クロスフェード開始");
                     if let Some(ref act) = active {
                         let steps = 12;     // ステップ数（増やすほど滑らか）
                         let step_ms = 20;   // ステップ間隔（合計 ~240ms）
@@ -368,6 +378,7 @@ pub fn audio_main(
                             std::thread::sleep(Duration::from_millis(step_ms));
                         }
                     }
+                    info!("✅ クロスフェード完了");
 
                     // 旧パイプラインを停止
                     if let Some(old) = active.take() {
@@ -382,7 +393,7 @@ pub fn audio_main(
                     if let Some(t) = last_server_time_ns { initial_server_time_ns = t; }
                     switching = false;
                     last_switch_end = Some(Instant::now());
-                    info!("Parallel switch completed");
+                    info!("🎉 音源切り替え完了");
                 }
             }
         }
