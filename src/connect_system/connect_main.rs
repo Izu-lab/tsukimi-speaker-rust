@@ -12,6 +12,19 @@ use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint};
 use tracing::{debug, error, info, instrument};
 
+/// place_typeに基づいてサウンドファイル名を決定する
+fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
+    match place_type {
+        "projection_mapping" => "sound.mp3",
+        "buddhas_bowl" => "",
+        "jeweled_branch" => "",
+        "fire_rat_robe" => "",
+        "dragons_jewel" => "",
+        "swallows_cowry" => "",
+        _ => "tsukimi-main.mp3", // 未知の place_type のためのデフォルトサウンド
+    }
+}
+
 #[instrument(skip(client, rx, sound_map))]
 async fn run_device_service_client(
     mut client: DeviceServiceClient<Channel>,
@@ -80,17 +93,7 @@ async fn run_device_service_client(
                                     info!(old_sound_map_size = sound_map.len(), "Before clearing sound_map");
                                     sound_map.clear();
                                     for loc in location_update.locations {
-                                        // TODO: mp3を修正する
-                                        // place_type に基づいてサウンドファイル名を決定
-                                        let sound_file = match loc.place_type.as_str() {
-                                            "projection_mapping" => "tsukimi-main.mp3",
-                                            "buddhas_bowl" => "",
-                                            "jeweled_branch" => "",
-                                            "fire_rat_robe" => "",
-                                            "dragons_jewel" => "",
-                                            "swallows_cowry" => "",
-                                            _ => "sound.mp3", // 未知の place_type のためのデフォルトサウンド
-                                        };
+                                        let sound_file = get_sound_file_from_place_type(&loc.place_type);
                                         info!(
                                             address = %loc.address,
                                             place_type = %loc.place_type,
