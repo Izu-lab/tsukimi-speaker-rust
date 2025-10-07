@@ -119,6 +119,8 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
                 pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, seek_time)?;
                 if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
                     info!(?seek_time, "Seek completed (AsyncDone)");
+                    // FLUSHシーク後、パイプラインが完全に安定するまで少し待つ
+                    std::thread::sleep(Duration::from_millis(100));
                 } else {
                     warn!(?seek_time, "AsyncDone not received after seek");
                 }
@@ -327,17 +329,30 @@ pub fn audio_main(
                     // 新しいパイプラインを構築
                     let next = build_pipeline(&desired_sound)?;
 
-                    // Paused → シーク → volume=0 → Playing
+                    // まずPausedにしてシーク
                     let _ = next.pipeline.set_state(gst::State::Paused);
                     wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(10), "standby_pause");
-                    if let Some(server_time_ns) = last_server_time_ns { let _ = seek_to_server_time(&next.pipeline, &next.bus, server_time_ns); }
+
+                    // シークを実行（Paused状態で）
+                    if let Some(server_time_ns) = last_server_time_ns {
+                        let _ = seek_to_server_time(&next.pipeline, &next.bus, server_time_ns);
+                    }
+
                     if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
+
+                    // volume=0にしてからPlayingに移行
                     set_volume(&next.volume, 0.0);
                     let _ = next.pipeline.set_state(gst::State::Playing);
 
-                    // デコードウォームアップ: 再生直後のパーサ再同期やプリロールが落ち着くまで少し待つ
-                    std::thread::sleep(Duration::from_millis(300));
-                    wait_for_buffering(&next.bus, Duration::from_secs(5), "warmup_buffering");
+                    // Playing状態になるまで待つ
+                    wait_for_state(&next.pipeline, gst::State::Playing, Duration::from_secs(5), "standby_playing");
+
+                    // パイプラインが完全に安定するまで追加で待機
+                    // デコードウォームアップ: FLUSHシーク後のバッファ再充填を待つ
+                    std::thread::sleep(Duration::from_millis(500));
+
+                    // バッファリング状態を確認（オプション）
+                    wait_for_buffering(&next.bus, Duration::from_secs(3), "warmup_buffering");
 
                     // クロスフェード（短時間）
                     if let Some(ref act) = active {
