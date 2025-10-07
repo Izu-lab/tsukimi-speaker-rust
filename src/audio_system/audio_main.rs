@@ -58,7 +58,7 @@ fn build_decoder_pipeline(sound_path: &str, channel: &str) -> Result<DecoderStat
             "filesrc location={} ! decodebin ! audioconvert ! audioresample ! ",
             "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
             "pitch name=pch{} ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! ",
-            "interaudiosink channel={} buffer-time=50000000"
+            "interaudiosink channel={}"
         ),
         sound_path,
         channel,
@@ -281,8 +281,17 @@ pub fn audio_main(
     }
 
     // 終了処理
-    if let Some(dec) = active { let _ = dec.pipeline.set_state(gst::State::Null); }
-    if let Some(dec) = standby { let _ = dec.pipeline.set_state(gst::State::Null); }
+    info!("Shutting down audio system");
+    if let Some(dec) = active {
+        let _ = dec.pipeline.set_state(gst::State::Null);
+        wait_for_state(&dec.pipeline, gst::State::Null, Duration::from_secs(2), "active_null");
+    }
+    if let Some(dec) = standby {
+        let _ = dec.pipeline.set_state(gst::State::Null);
+        wait_for_state(&dec.pipeline, gst::State::Null, Duration::from_secs(2), "standby_null");
+    }
     let _ = mixer.pipeline.set_state(gst::State::Null);
+    wait_for_state(&mixer.pipeline, gst::State::Null, Duration::from_secs(2), "mixer_null");
+    info!("Audio system shut down complete");
     Ok(())
 }
