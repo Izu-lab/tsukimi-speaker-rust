@@ -42,7 +42,7 @@ pub fn audio_main(
 
 
 
-    let mut current_sound = Some("tsukimi-main.mp3".to_string());
+    let mut current_sound: Option<String> = None;
     let mut detected_devices = HashMap::<String, Arc<DeviceInfo>>::new();
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
@@ -137,6 +137,9 @@ pub fn audio_main(
                     playback_start_time = Instant::now();
                     initial_server_time_ns = 0;
 
+                    // 初期ファイルを設定
+                    current_sound = Some("tsukimi-main.mp3".to_string());
+
                     playback_state = PlaybackState::Playing;
                     continue;
                 }
@@ -171,6 +174,9 @@ pub fn audio_main(
                     // 時間の基準点を記録
                     playback_start_time = Instant::now();
                     initial_server_time_ns = server_time_ns;
+
+                    // 初期ファイルを設定
+                    current_sound = Some("tsukimi-main.mp3".to_string());
 
                     playback_state = PlaybackState::Playing;
                 }
