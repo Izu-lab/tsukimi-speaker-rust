@@ -24,10 +24,19 @@ struct PipelineState {
     volume: gst::Element,
 }
 
+fn sink_name() -> &'static str {
+    #[cfg(target_os = "linux")]
+    { "pulsesink" }
+    #[cfg(not(target_os = "linux"))]
+    { "autoaudiosink" }
+}
+
 fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
+    let sink = sink_name();
     let pipeline_str = format!(
-        "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! autoaudiosink",
-        sound_path
+        "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 use-buffering=true ! {}",
+        sound_path,
+        sink
     );
     let pipeline = gst::parse::launch(&pipeline_str)?
         .downcast::<gst::Pipeline>()
@@ -132,6 +141,10 @@ pub fn audio_main(
     let mut playback_start_time = Instant::now();
     let mut initial_server_time_ns = 0u64;
     let mut last_server_time_ns: Option<u64> = None;
+    // スイッチング中/直後のシーク抑止用ガード
+    let mut switching = false;
+    let mut last_switch_end: Option<Instant> = None;
+    const SWITCH_GUARD_WINDOW: Duration = Duration::from_millis(400);
 
     let sync_wait_start = Instant::now();
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -215,7 +228,9 @@ pub fn audio_main(
 
                 // ドリフト補正（アクティブ側のみ）
                 if let (Some(server_time_ns), Some(ref act)) = (last_server_time_ns, active.as_ref()) {
-                    if initial_server_time_ns != 0 {
+                    // 切替中と直後のウィンドウはシークを行わない
+                    let in_switch_guard = switching || last_switch_end.map_or(false, |t| Instant::now().duration_since(t) < SWITCH_GUARD_WINDOW);
+                    if initial_server_time_ns != 0 && !in_switch_guard {
                         let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
                         let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
                         let diff_real_ns = server_elapsed - client_elapsed;
@@ -256,6 +271,7 @@ pub fn audio_main(
 
                 if desired_sound != current_sound {
                     info!(from=%current_sound, to=%desired_sound, "Parallel switch start");
+                    switching = true;
                     // 事前準備: スタンバイを構築/再利用
                     let next = if let Some(st) = standby.take() {
                          st.filesrc.set_property("location", &desired_sound);
@@ -300,6 +316,8 @@ pub fn audio_main(
                     standby = None; // メモリ節約: 必要時に再構築
                     playback_start_time = Instant::now();
                     if let Some(t) = last_server_time_ns { initial_server_time_ns = t; }
+                    switching = false;
+                    last_switch_end = Some(Instant::now());
                     info!("Parallel switch completed");
                 }
             }
