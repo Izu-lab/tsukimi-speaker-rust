@@ -190,7 +190,7 @@ pub async fn connect_main(
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "http://34.146.28.74:50051";
+    let server_addr = "http://35.221.123.49:50051";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
