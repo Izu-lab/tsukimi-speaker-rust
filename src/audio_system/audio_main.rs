@@ -325,17 +325,6 @@ pub fn audio_main(
                     info!(from=%current_sound, to=%desired_sound, "🔄 音源切り替え開始");
                     switching = true;
 
-                    // 旧パイプラインの現在の再生位置を取得
-                    let current_position = if let Some(ref act) = active {
-                        act.pipeline.query_position::<gst::ClockTime>()
-                    } else {
-                        None
-                    };
-
-                    if let Some(pos) = current_position {
-                        info!("現在の再生位置: {:?}", pos);
-                    }
-
                     // スタンバイパイプラインがあれば停止して破棄
                     if let Some(old_standby) = standby.take() {
                         let _ = old_standby.pipeline.set_state(gst::State::Null);
@@ -345,25 +334,7 @@ pub fn audio_main(
                     info!("📦 新しいパイプラインを構築中...");
                     let next = build_pipeline(&desired_sound)?;
 
-                    // まずPaused状態にして、シークを実行
-                    let _ = next.pipeline.set_state(gst::State::Paused);
-                    wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(5), "switch_pause");
-
-                    // 旧パイプラインの位置にシーク
-                    if let Some(pos) = current_position {
-                        info!("新しいパイプラインを位置 {:?} にシーク", pos);
-                        let _ = next.pipeline.seek_simple(
-                            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
-                            pos
-                        );
-                        // シーク完了を待つ
-                        let _ = next.bus.timed_pop_filtered(
-                            Some(gst::ClockTime::from_seconds(5)),
-                            &[gst::MessageType::AsyncDone]
-                        );
-                    }
-
-                    // volume=1.0でPlaying状態に設定し、すぐに再生開始
+                    // volume=1.0でPlaying状態に設定
                     set_volume(&next.volume, 1.0);
                     if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
 
@@ -372,8 +343,26 @@ pub fn audio_main(
 
                     // Playing状態になるまで待つ
                     info!("⏳ Playing状態になるまで待機中...");
-                    wait_for_state(&next.pipeline, gst::State::Playing, Duration::from_secs(5), "standby_playing");
+                    wait_for_state(&next.pipeline, gst::State::Playing, Duration::from_secs(5), "switch_playing");
                     info!("✓ Playing状態に到達");
+
+                    // Playing状態に到達した時点で旧パイプラインの再生位置を取得してシーク
+                    if let Some(ref act) = active {
+                        if let Some(position) = act.pipeline.query_position::<gst::ClockTime>() {
+                            info!("現在の再生位置: {:?}", position);
+                            info!("新しいパイプラインを位置 {:?} にシーク", position);
+                            let _ = next.pipeline.seek_simple(
+                                gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+                                position
+                            );
+                            // シーク完了を待つ
+                            let _ = next.bus.timed_pop_filtered(
+                                Some(gst::ClockTime::from_seconds(3)),
+                                &[gst::MessageType::AsyncDone]
+                            );
+                            info!("✓ シーク完了");
+                        }
+                    }
 
                     // 旧パイプラインを即座に停止
                     info!("🛑 旧パイプラインを停止");
