@@ -458,6 +458,53 @@ pub fn audio_main(
                                 info!("▶️  パイプラインをPlaying状態に設定");
                                 let _ = next.pipeline.set_state(gst::State::Playing);
 
+                                // 🔥 重要：バッファリング完了を待つ
+                                info!("⏳ バッファリング完了を待機中...");
+                                let buffering_start = std::time::Instant::now();
+                                let buffering_timeout = Duration::from_secs(5);
+                                let mut is_buffered = false;
+                                let mut last_percent = 0;
+
+                                while std::time::Instant::now().duration_since(buffering_start) < buffering_timeout {
+                                    // バッファリングメッセージを確認（短いタイムアウトで頻繁にチェック）
+                                    while let Some(msg) = next.bus.timed_pop(gst::ClockTime::from_mseconds(50)) {
+                                        use gst::MessageView;
+                                        match msg.view() {
+                                            MessageView::Buffering(buffering_msg) => {
+                                                let percent = buffering_msg.percent();
+                                                if percent != last_percent && (percent % 25 == 0 || percent >= 100) {
+                                                    info!("📊 バッファリング進行: {}%", percent);
+                                                    last_percent = percent;
+                                                }
+                                                if percent >= 100 {
+                                                    is_buffered = true;
+                                                    info!("✅ バッファリング完了 (100%)");
+                                                    break;
+                                                }
+                                            }
+                                            MessageView::Error(err) => {
+                                                error!("❌ 新パイプラインでエラー: {}", err.error());
+                                                return;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
+                                    if is_buffered {
+                                        break;
+                                    }
+
+                                    // まだバッファリング中の場合は少し待機
+                                    std::thread::sleep(Duration::from_millis(50));
+                                }
+
+                                // バッファリングが完了していない場合でも、タイムアウト後は続行
+                                if !is_buffered {
+                                    warn!("⚠️  バッファリングタイムアウト、続行します");
+                                } else {
+                                    info!("🎵 新パイプラインの準備完了、切り替え可能");
+                                }
+
                                 // 完成したパイプラインをメインスレッドに送信
                                 if let Err(e) = switch_tx_clone.blocking_send(next) {
                                     error!("Failed to send new pipeline: {}", e);
@@ -472,7 +519,7 @@ pub fn audio_main(
             }
         }
 
-        // ⚠️ 重要：sleepを完全に削除してCPU使用率を最小化しつつ、
+        // ⚠️ 重要���sleepを完全に削除してCPU使用率を最小化しつつ、
         // バスタイムアウト(10ms)で自然な待機を実現
         // これによりGStreamerのイベント処理が滞らない
     }
