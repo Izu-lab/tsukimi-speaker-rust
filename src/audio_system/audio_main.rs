@@ -35,10 +35,13 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let desc = format!(
         concat!(
             "interaudiosrc channel=a blocksize=8192 ! ",
+            "audio/x-raw,format=F32LE,rate=44100,channels=2 ! ",
             "volume name=volA ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
             "interaudiosrc channel=b blocksize=8192 ! ",
+            "audio/x-raw,format=F32LE,rate=44100,channels=2 ! ",
             "volume name=volB ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
             "audiomixer name=mix start-time-selection=first ! ",
+            "audio/x-raw,format=S16LE,rate=44100,channels=2 ! ",
             "queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! ",
             "{} buffer-time=200000 latency-time=20000"
         ),
