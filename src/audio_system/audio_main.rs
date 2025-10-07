@@ -10,114 +10,98 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 
-// 再生状態を管理するためのenum
-enum PlaybackState {
-    WaitingForFirstSync,
-    Playing,
+enum PlaybackState { WaitingForFirstSync, Playing }
+
+struct MixerState {
+    pipeline: gst::Pipeline,
+    bus: gst::Bus,
+    vol_a: gst::Element,
+    vol_b: gst::Element,
 }
 
-struct PipelineState {
+struct DecoderState {
     pipeline: gst::Pipeline,
     bus: gst::Bus,
     pitch: Option<gst::Element>,
-    filesrc: gst::Element,
-    volume: gst::Element,
 }
 
 fn sink_name() -> &'static str {
-    #[cfg(target_os = "linux")]
-    { "pulsesink" }
-    #[cfg(not(target_os = "linux"))]
-    { "autoaudiosink" }
+    #[cfg(target_os = "linux")] { "pulsesink" }
+    #[cfg(not(target_os = "linux"))] { "autoaudiosink" }
 }
 
-fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
+fn build_mixer_pipeline() -> Result<MixerState> {
     let sink = sink_name();
-    let pipeline_str = format!(
-        "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! {}",
-        sound_path,
+    let desc = format!(
+        concat!(
+            "interaudiosrc channel=a ! audioconvert ! volume name=volA ! queue2 max-size-time=200000000 ! mix. ",
+            "interaudiosrc channel=b ! audioconvert ! volume name=volB ! queue2 max-size-time=200000000 ! mix. ",
+            "audiomixer name=mix ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! {}"
+        ),
         sink
     );
-    let pipeline = gst::parse::launch(&pipeline_str)?
-        .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow!("Failed to downcast to Pipeline"))?;
-    let bus = pipeline.bus().ok_or_else(|| anyhow!("Failed to get bus from pipeline"))?;
-    let filesrc = pipeline.by_name("src").ok_or_else(|| anyhow!("filesrc not found"))?;
-    let volume = pipeline.by_name("vol").ok_or_else(|| anyhow!("volume not found"))?;
-    let pitch = pipeline.by_name("pch");
-    Ok(PipelineState { pipeline, bus, pitch, filesrc, volume })
+    let pipeline = gst::parse::launch(&desc)?.downcast::<gst::Pipeline>().map_err(|_| anyhow!("Downcast mixer pipeline failed"))?;
+    let bus = pipeline.bus().ok_or_else(|| anyhow!("mixer bus missing"))?;
+    let vol_a = pipeline.by_name("volA").ok_or_else(|| anyhow!("volA missing"))?;
+    let vol_b = pipeline.by_name("volB").ok_or_else(|| anyhow!("volB missing"))?;
+    Ok(MixerState { pipeline, bus, vol_a, vol_b })
+}
+
+fn build_decoder_pipeline(sound_path: &str, channel: &str) -> Result<DecoderState> {
+    // pitch はテンポ補正用（存在しない環境ではオプション）
+    let desc = format!(
+        concat!(
+            "filesrc location={} ! decodebin ! audioconvert ! audioresample ! ",
+            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
+            "pitch name=pch{} ! interaudiosink channel={}"
+        ),
+        sound_path,
+        channel,
+        channel,
+    );
+    let pipeline = gst::parse::launch(&desc)?.downcast::<gst::Pipeline>().map_err(|_| anyhow!("Downcast decoder pipeline failed"))?;
+    let bus = pipeline.bus().ok_or_else(|| anyhow!("decoder bus missing"))?;
+    let pitch = pipeline.by_name(&format!("pch{}", channel));
+    Ok(DecoderState { pipeline, bus, pitch })
 }
 
 fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duration, label: &str) -> bool {
     let start = Instant::now();
     loop {
-        if Instant::now().duration_since(start) > timeout {
-            error!(?target, label, "Timeout waiting for state");
-            return false;
-        }
+        if Instant::now().duration_since(start) > timeout { warn!(?target, label, "Timeout waiting state"); return false; }
         let (ret, current, pending) = pipeline.state(gst::ClockTime::from_mseconds(0));
-        match (ret, current, pending) {
-            (Ok(_), c, gst::State::VoidPending) if c == target => {
-                info!(?target, label, "Reached target state");
-                return true;
-            }
-            (Ok(_), c, p) => {
-                debug!(?c, ?p, label, "Waiting for state");
-            }
-            (Err(e), c, p) => {
-                error!(?e, ?c, ?p, label, "Error while waiting for state");
-                return false;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(50));
+        if let (Ok(_), c, gst::State::VoidPending) = (ret, current, pending) { if c == target { return true; } }
+        std::thread::sleep(Duration::from_millis(30));
     }
 }
 
-fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns: u64) -> Result<()> {
+fn seek_pipeline_to_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns: u64) -> Result<()> {
+    // duration待ち（最大3秒）
     let start = Instant::now();
     let timeout = Duration::from_secs(3);
     loop {
-        if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
-            if duration.nseconds() > 0 {
-                let seek_time_ns = server_time_ns % duration.nseconds();
-                let seek_time = gst::ClockTime::from_nseconds(seek_time_ns);
-                pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, seek_time)?;
-                if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
-                    info!(?seek_time, "Seek completed (AsyncDone)");
-                } else {
-                    warn!(?seek_time, "AsyncDone not received after seek");
-                }
-                return Ok(());
-            }
-        }
-        if Instant::now().duration_since(start) > timeout {
-            warn!("Duration unavailable for seek (timeout)");
+        if let Some(dur) = pipeline.query_duration::<gst::ClockTime>() { if dur.nseconds() > 0 {
+            let t_ns = server_time_ns % dur.nseconds();
+            let t = gst::ClockTime::from_nseconds(t_ns);
+            pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, t)?;
+            let _ = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]);
             return Ok(());
-        }
+        }}
+        if Instant::now().duration_since(start) > timeout { return Ok(()); }
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 
-fn set_volume(volume: &gst::Element, v: f64) {
-    volume.set_property("volume", v);
-}
-
-fn wait_until_flowing(pipeline: &gst::Pipeline, max_wait: Duration) -> bool {
+fn wait_until_flowing(p: &gst::Pipeline, max_wait: Duration) -> bool {
     let start = Instant::now();
-    // 最初の位置（取得できなければ0とみなす）
-    let mut last_pos = pipeline.query_position::<gst::ClockTime>().map(|ct| ct.nseconds()).unwrap_or(0);
-    loop {
-        if Instant::now().duration_since(start) > max_wait {
-            return false;
-        }
-        if let Some(pos) = pipeline.query_position::<gst::ClockTime>() {
-            let ns = pos.nseconds();
-            if ns > last_pos { return true; }
-            last_pos = ns;
-        }
+    let mut last = p.query_position::<gst::ClockTime>().map(|c| c.nseconds()).unwrap_or(0);
+    loop { if Instant::now().duration_since(start) > max_wait { return false; }
+        if let Some(pos) = p.query_position::<gst::ClockTime>() { let ns = pos.nseconds(); if ns > last { return true; } last = ns; }
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+fn set_vol(e: &gst::Element, v: f64) { e.set_property("volume", v); }
 
 #[instrument(skip(rx, time_sync_rx, sound_map))]
 pub fn audio_main(
@@ -128,266 +112,133 @@ pub fn audio_main(
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
 ) -> Result<()> {
-    info!("Audio system main loop started.");
-
-    let sound_setting = Arc::new(Mutex::new(SoundSetting {
-        id: "default".to_string(),
-        max_volume_rssi: -40.0,
-        min_volume_rssi: -90.0,
-        max_volume: 1.0,
-        min_volume: 0.0,
-        is_muted: false,
-    }));
-
+    tracing_subscriber::fmt::try_init().ok();
+    info!("Audio system (audiomixer) started");
     gst::init()?;
-    info!("GStreamer initialized successfully.");
 
-    // 準備
+    // 状態
     let mut playback_state = PlaybackState::WaitingForFirstSync;
     let default_sound = "tsukimi-main.mp3".to_string();
-    let mut current_sound: String = default_sound.clone();
+    let mut current_sound = default_sound.clone();
     let mut detected_devices: HashMap<String, Arc<DeviceInfo>> = HashMap::new();
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
-    // アクティブ/インアクティブの2系統を保持
-    let mut active: Option<PipelineState> = None;
-    let mut standby: Option<PipelineState> = None;
+    // ミキサーパイプライン
+    let mixer = build_mixer_pipeline()?;
+    mixer.pipeline.set_state(gst::State::Playing)?;
+    wait_for_state(&mixer.pipeline, gst::State::Playing, Duration::from_secs(3), "mixer_play");
+    set_vol(&mixer.vol_a, 1.0);
+    set_vol(&mixer.vol_b, 0.0);
+
+    // デコーダ（アクティブ/スタンバイ）
+    let mut active: Option<DecoderState> = None; // channel "a" か "b"
+    let mut standby: Option<DecoderState> = None;
+    let mut active_channel = "a".to_string();
 
     // 同期関連
-    let mut playback_start_time = Instant::now();
-    let mut initial_server_time_ns = 0u64;
+    let mut initial_server_time_ns: u64 = 0;
     let mut last_server_time_ns: Option<u64> = None;
-    // スイッチング中/直後のシーク抑止用ガード
-    let mut switching = false;
-    let mut last_switch_end: Option<Instant> = None;
-    const SWITCH_GUARD_WINDOW: Duration = Duration::from_millis(400);
-    // 切替ヒステリシス（desired_soundが一定時間継続したら切替）
-    let mut pending_sound: Option<(String, Instant)> = None;
-    const SWITCH_STABLE_WINDOW: Duration = Duration::from_millis(300);
-
     let sync_wait_start = Instant::now();
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 
-    'main_loop: loop {
-        // バス処理（アクティブ優先、スタンバイも確認）
-        if let Some(ref act) = active {
-            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(5)) {
-                use gst::MessageView;
-                match msg.view() {
-                    MessageView::Eos(_) => {
-                        info!("Active pipeline EOS, looping");
-                        let _ = act.pipeline.seek_simple(gst::SeekFlags::FLUSH, gst::ClockTime::from_seconds(0));
-                    }
-                    MessageView::Error(err) => {
-                        error!(error=%err.error(), debug=?err.debug(), src=?err.src().map(|s| s.name()), "Active pipeline error");
-                        break 'main_loop;
-                    }
-                    _ => {}
-                }
-            }
+    'main: loop {
+        // ミキサーバスのメンテ
+        while let Some(msg) = mixer.bus.timed_pop(gst::ClockTime::from_mseconds(5)) {
+            use gst::MessageView; match msg.view() { MessageView::Error(e) => {
+                error!(err=%e.error(), debug=?e.debug(), "Mixer error"); break 'main;
+            }, _=>{} }
         }
-        if let Some(ref stdb) = standby {
-            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_mseconds(1)) {
-                use gst::MessageView;
-                match msg.view() {
-                    MessageView::Error(err) => {
-                        warn!(error=%err.error(), debug=?err.debug(), src=?err.src().map(|s| s.name()), "Standby pipeline error");
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // 最新サーバー時間を吸い上げ
+        // サーバー時間取り込み（最新だけ）
         while let Ok(t) = time_sync_rx.try_recv() { last_server_time_ns = Some(t); }
 
         match playback_state {
             PlaybackState::WaitingForFirstSync => {
-                if let Some(server_time_ns) = last_server_time_ns {
-                    // 初回アクティブを作成
-                    let act = build_pipeline(&current_sound)?;
-                    let _ = act.pipeline.set_state(gst::State::Paused);
-                    wait_for_state(&act.pipeline, gst::State::Paused, Duration::from_secs(10), "initial_pause");
-                    let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
-                    if let Some(ref p) = act.pitch { p.set_property("tempo", 1.0f32); }
-                    set_volume(&act.volume, 1.0);
-                    let _ = act.pipeline.set_state(gst::State::Playing);
-                    active = Some(act);
-
-                    playback_start_time = Instant::now();
-                    initial_server_time_ns = server_time_ns;
+                if let Some(t) = last_server_time_ns {
+                    // 初回のアクティブデコーダを起動（channel=a）
+                    let dec = build_decoder_pipeline(&current_sound, "a")?;
+                    dec.pipeline.set_state(gst::State::Paused)?;
+                    wait_for_state(&dec.pipeline, gst::State::Paused, Duration::from_secs(5), "dec_a_paused");
+                    seek_pipeline_to_time(&dec.pipeline, &dec.bus, t)?;
+                    if let Some(ref pch) = dec.pitch { pch.set_property("tempo", 1.0f32); }
+                    dec.pipeline.set_state(gst::State::Playing)?;
+                    wait_until_flowing(&dec.pipeline, Duration::from_millis(500));
+                    active = Some(dec);
+                    active_channel = "a".into();
+                    initial_server_time_ns = t;
                     playback_state = PlaybackState::Playing;
-                } else if Instant::now().duration_since(sync_wait_start) > SYNC_TIMEOUT {
-                    // 同期なしフォールバック
-                    let act = build_pipeline(&current_sound)?;
-                    let _ = act.pipeline.set_state(gst::State::Playing);
-                    set_volume(&act.volume, 1.0);
-                    active = Some(act);
-                    playback_start_time = Instant::now();
-                    initial_server_time_ns = 0;
-                    playback_state = PlaybackState::Playing;
+                    continue;
+                }
+                if Instant::now().duration_since(sync_wait_start) > SYNC_TIMEOUT {
+                    // フォールバック: 同期なしで開始
+                    let dec = build_decoder_pipeline(&current_sound, "a")?;
+                    dec.pipeline.set_state(gst::State::Playing)?;
+                    active = Some(dec); active_channel = "a".into();
+                    playback_state = PlaybackState::Playing; continue;
                 }
             }
             PlaybackState::Playing => {
                 // 設定更新
-                if let Ok(new_setting) = sound_setting_rx.try_recv() {
-                    info!(?new_setting, "Received new sound setting");
-                    *sound_setting.lock().unwrap() = new_setting;
-                }
+                if let Ok(new_setting) = sound_setting_rx.try_recv() { info!(?new_setting, "Sound setting updated"); }
                 // デバイス更新
-                while let Ok(device_info) = rx.try_recv() {
-                    detected_devices.insert(device_info.address.clone(), device_info);
-                }
-                if Instant::now().duration_since(last_cleanup) > CLEANUP_INTERVAL {
-                    let initial_count = detected_devices.len();
+                while let Ok(di) = rx.try_recv() { detected_devices.insert(di.address.clone(), di); }
+                // 古いデバイスクリーンアップ
+                if Instant::now().duration_since(last_cleanup) > CLEANUP_INTERVAL { let n0 = detected_devices.len();
                     detected_devices.retain(|_, d| Instant::now().duration_since(d.last_seen) < CLEANUP_INTERVAL);
-                    if initial_count != detected_devices.len() { debug!("Cleaned up old devices."); }
-                    last_cleanup = Instant::now();
+                    if n0!=detected_devices.len(){ debug!("Cleaned devices"); } last_cleanup=Instant::now(); }
+
+                // ドリフト補正（アクティブのみ、切替時は抑止）
+                if let (Some(t), Some(ref dec)) = (last_server_time_ns, active.as_ref()) { let server_elapsed = if initial_server_time_ns>0 {(t-initial_server_time_ns) as i64} else {0};
+                    // シンプル: 大きくずれていたらシーク
+                    if initial_server_time_ns!=0 { let client_pos = dec.pipeline.query_position::<gst::ClockTime>().map(|c| c.nseconds()).unwrap_or(0) as i64;
+                        let diff = (server_elapsed*1) - client_pos; // 同一単位(ns)の概算
+                        if diff.abs() as f64 / 1e9 > 1.0 { seek_pipeline_to_time(&dec.pipeline, &dec.bus, t)?; initial_server_time_ns = t; }
+                    }
                 }
 
-                // will_switch は desired_sound 算出後に評価する
-
-                // ベストデバイス選定
+                // 望ましいサウンドの決定（ヒステリシスは省略、まず正しさ優先）
                 let best_device = {
                     let sound_map = sound_map.lock().unwrap();
-                    let my_addr_opt_clone = my_address.lock().unwrap().clone();
-                    let points = *current_points.lock().unwrap();
-                    let mut candidates: Vec<_> = detected_devices.values().filter(|d| sound_map.contains_key(&d.address)).collect();
-                    candidates.sort_by(|a, b| {
-                        let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
-                        let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
-                        b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
-                    });
-                    candidates.first().cloned()
+                    detected_devices.values().filter_map(|d| sound_map.get(&d.address).cloned()).next()
                 };
+                let desired = best_device.unwrap_or_else(|| default_sound.clone());
 
-                let desired_sound_now = if let Some(device) = best_device {
-                    let sound_map = sound_map.lock().unwrap();
-                    sound_map.get(&device.address).cloned().unwrap_or_else(|| default_sound.clone())
-                } else { default_sound.clone() };
+                if desired != current_sound {
+                    info!(from=%current_sound, to=%desired, "Switch using audiomixer");
+                    let standby_channel = if active_channel == "a" { "b" } else { "a" };
+                    // 既存スタンバイを廃棄
+                    if let Some(st) = standby.take() { let _ = st.pipeline.set_state(gst::State::Null); }
+                    // 新スタンバイ作成
+                    let next_dec = build_decoder_pipeline(&desired, standby_channel)?;
+                    next_dec.pipeline.set_state(gst::State::Paused)?;
+                    wait_for_state(&next_dec.pipeline, gst::State::Paused, Duration::from_secs(5), "standby_paused");
+                    if let Some(t) = last_server_time_ns { seek_pipeline_to_time(&next_dec.pipeline, &next_dec.bus, t)?; initial_server_time_ns = t; }
+                    if let Some(ref p) = next_dec.pitch { p.set_property("tempo", 1.0f32); }
+                    next_dec.pipeline.set_state(gst::State::Playing)?;
+                    // flowing 待ち
+                    wait_until_flowing(&next_dec.pipeline, Duration::from_millis(500));
 
-                // ヒステリシス: desired_soundが一定時間安定するまで切替えない
-                let desired_sound = if let Some((ref s, since)) = pending_sound {
-                    if *s == desired_sound_now {
-                        if Instant::now().duration_since(since) >= SWITCH_STABLE_WINDOW {
-                            desired_sound_now.clone()
-                        } else {
-                            current_sound.clone() // まだ待つ
-                        }
-                    } else {
-                        // 変更検知、カウントし直し
-                        pending_sound = Some((desired_sound_now.clone(), Instant::now()));
-                        current_sound.clone()
-                    }
-                } else {
-                    pending_sound = Some((desired_sound_now.clone(), Instant::now()));
-                    current_sound.clone()
-                };
+                    // 等電力クロスフェード（volA/volB）
+                    let (from_vol, to_vol) = if standby_channel == "b" { (&mixer.vol_a, &mixer.vol_b) } else { (&mixer.vol_b, &mixer.vol_a) };
+                    let steps = 16; let step_ms = 30;
+                    for i in 0..=steps { let t = (i as f64)/(steps as f64); let theta = t*std::f64::consts::FRAC_PI_2; let a = theta.cos(); let b = theta.sin(); set_vol(from_vol, a); set_vol(to_vol, b); std::thread::sleep(Duration::from_millis(step_ms)); }
 
-                let will_switch = desired_sound != current_sound;
-
-                if !will_switch {
-                    if let (Some(server_time_ns), Some(ref act)) = (last_server_time_ns, active.as_ref()) {
-                        // 切替中と直後のウィンドウはシークを行わない
-                        let in_switch_guard = switching || last_switch_end.map_or(false, |t| Instant::now().duration_since(t) < SWITCH_GUARD_WINDOW);
-                        if initial_server_time_ns != 0 && !in_switch_guard {
-                            let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
-                            let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
-                            let diff_real_ns = server_elapsed - client_elapsed;
-                            let diff_abs_s = (diff_real_ns.abs() as f64) / 1e9;
-                            let new_rate: f64 = if diff_abs_s > 1.0 {
-                                warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected, seeking active.");
-                                let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
-                                1.0
-                            } else {
-                                let diff_s = diff_real_ns as f64 / 1e9;
-                                const CORRECTION_TIME_S: f64 = 2.0;
-                                (1.0 + diff_s / CORRECTION_TIME_S).clamp(0.9, 1.1)
-                            };
-                            if let Some(ref p) = act.pitch { p.set_property("tempo", new_rate as f32); }
-                            playback_start_time = Instant::now();
-                            initial_server_time_ns = server_time_ns;
-                        }
-                    }
-                }
-
-                if will_switch {
-                    info!(from=%current_sound, to=%desired_sound, "Parallel switch start");
-                    switching = true;
-                    // 事前準備: スタンバイを構築/再利用
-                    let next = if let Some(st) = standby.take() {
-                         st.filesrc.set_property("location", &desired_sound);
-                         st
-                     } else {
-                         build_pipeline(&desired_sound)?
-                     };
-                    // Paused → シーク → volume=0 → Playing
-                    let _ = next.pipeline.set_state(gst::State::Paused);
-                    wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(10), "standby_pause");
-                    if let Some(server_time_ns) = last_server_time_ns { let _ = seek_to_server_time(&next.pipeline, &next.bus, server_time_ns); }
-                    if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
-                    set_volume(&next.volume, 0.0);
-                    let _ = next.pipeline.set_state(gst::State::Playing);
-
-                    // デコードウォームアップ: 再生直後のパーサ再同期やプリロールが落ち着くまで少し待つ
-                    std::thread::sleep(Duration::from_millis(100));
-                    // 実際にポジションが進行し始めるのを待つ（最大500ms）
-                    let flowing = wait_until_flowing(&next.pipeline, Duration::from_millis(500));
-                    if !flowing { warn!("Next pipeline did not start flowing in time; proceeding with fade anyway"); }
-
-                    // 計測: フェード開始前の両者のポジションを取得
-                    let act_pos0 = active.as_ref().and_then(|a| a.pipeline.query_position::<gst::ClockTime>()).map(|ct| ct.nseconds()).unwrap_or(0);
-                    let next_pos0 = next.pipeline.query_position::<gst::ClockTime>().map(|ct| ct.nseconds()).unwrap_or(0);
-                    info!(act_pos0, next_pos0, "Fade start positions (ns)");
-
-                    // クロスフェード（短時間）
-                    if let Some(ref act) = active {
-                        let steps = 16;     // ステップ数（増やすほど滑らか）
-                        let step_ms = 30;   // ステップ間隔（合計 ~480ms）
-                        for i in 0..=steps {
-                            let t = (i as f64) / (steps as f64);
-                            let theta = t * std::f64::consts::FRAC_PI_2; // 0 -> π/2
-                            let a = theta.cos(); // 現行の振幅係数
-                            let b = theta.sin(); // 次の振幅係数
-                            set_volume(&act.volume, a);
-                            set_volume(&next.volume, b);
-
-                            // 計測: この時点の両者のポジションを取得
-                            if i % 2 == 0 || i == steps { // ログ量抑制
-                                let act_pos = act.pipeline.query_position::<gst::ClockTime>().map(|ct| ct.nseconds()).unwrap_or(0);
-                                let nxt_pos = next.pipeline.query_position::<gst::ClockTime>().map(|ct| ct.nseconds()).unwrap_or(0);
-                                debug!(i, a, b, act_pos, nxt_pos, "Fade step");
-                            }
-                            std::thread::sleep(Duration::from_millis(step_ms));
-                        }
-                    }
-
-                    // 計測: フェード終了時点
-                    let act_pos1 = next.pipeline.query_position::<gst::ClockTime>().map(|ct| ct.nseconds()).unwrap_or(0);
-                    info!(act_pos1, "Fade end (next pos ns)");
-
-                    // 旧パイプラインを停止
-                    if let Some(old) = active.take() {
-                         let _ = old.pipeline.set_state(gst::State::Null);
-                     }
-
-                    // 切替確定
-                    current_sound = desired_sound;
-                    active = Some(next);
-                    standby = None; // メモリ節約: 必要時に再構築
-                    playback_start_time = Instant::now();
-                    if let Some(t) = last_server_time_ns { initial_server_time_ns = t; }
-                    switching = false;
-                    last_switch_end = Some(Instant::now());
-                    info!("Parallel switch completed");
+                    // 古いデコーダ停止
+                    if let Some(old) = active.take() { let _ = old.pipeline.set_state(gst::State::Null); }
+                    // 掛け替え
+                    active = Some(next_dec);
+                    current_sound = desired;
+                    active_channel = standby_channel.into();
+                    // フェード後: 出力ボリュームを固定
+                    if active_channel == "a" { set_vol(&mixer.vol_a, 1.0); set_vol(&mixer.vol_b, 0.0); } else { set_vol(&mixer.vol_a, 0.0); set_vol(&mixer.vol_b, 1.0); }
                 }
             }
         }
     }
 
     // 終了処理
-    if let Some(act) = active { let _ = act.pipeline.set_state(gst::State::Null); }
-    if let Some(st) = standby { let _ = st.pipeline.set_state(gst::State::Null); }
+    if let Some(dec) = active { let _ = dec.pipeline.set_state(gst::State::Null); }
+    if let Some(dec) = standby { let _ = dec.pipeline.set_state(gst::State::Null); }
+    let _ = mixer.pipeline.set_state(gst::State::Null);
     Ok(())
 }
