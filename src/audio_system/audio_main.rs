@@ -273,11 +273,13 @@ pub fn audio_main(
 
                     // クロスフェード（短時間）
                     if let Some(ref act) = active {
-                        let steps = 6;
-                        let step_ms = 40; // 合計 ~240ms
+                        let steps = 12;     // ステップ数（増やすほど滑らか）
+                        let step_ms = 20;   // ステップ間隔（合計 ~240ms）
                         for i in 0..=steps {
-                            let a = 1.0 - (i as f64) / (steps as f64);
-                            let b = (i as f64) / (steps as f64);
+                            let t = (i as f64) / (steps as f64);
+                            let theta = t * std::f64::consts::FRAC_PI_2; // 0 -> π/2
+                            let a = theta.cos(); // 現行の振幅係数
+                            let b = theta.sin(); // 次の振幅係数
                             set_volume(&act.volume, a);
                             set_volume(&next.volume, b);
                             std::thread::sleep(Duration::from_millis(step_ms));
