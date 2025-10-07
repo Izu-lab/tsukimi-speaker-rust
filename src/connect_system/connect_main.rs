@@ -10,7 +10,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint};
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// place_typeに基づいてサウンドファイル名を決定する
 fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
@@ -101,7 +101,16 @@ async fn run_device_service_client(
                                             is_empty = sound_file.is_empty(),
                                             "Processing location entry"
                                         );
-                                        sound_map.insert(loc.address.clone(), sound_file.to_string());
+                                        // 空文字列のサウンドファイルは挿入しない
+                                        if !sound_file.is_empty() {
+                                            sound_map.insert(loc.address.clone(), sound_file.to_string());
+                                        } else {
+                                            warn!(
+                                                address = %loc.address,
+                                                place_type = %loc.place_type,
+                                                "Skipping empty sound file for location"
+                                            );
+                                        }
                                     }
                                     info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with full contents");
                                 }

@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
     sound_map.insert(
         "00:11:22:33:44:55".to_string(),
-        "sound.mp3".to_string(),
+        "tsukimi-main.mp3".to_string(),  // sound.mp3が存在しない場合のためデフォルトファイルに変更
     );
     let sound_map = Arc::new(Mutex::new(sound_map));
     let current_points = Arc::new(Mutex::new(0_i32));

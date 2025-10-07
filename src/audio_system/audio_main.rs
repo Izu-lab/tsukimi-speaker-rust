@@ -89,8 +89,36 @@ pub fn audio_main(
                     }
                 }
                 MessageView::Error(err) => {
-                    error!("GStreamer pipeline error: {}, Debug info: {:?}", err.error(), err.debug());
+                    error!(
+                        "GStreamer pipeline error: {}, Debug info: {:?}, Source: {:?}",
+                        err.error(),
+                        err.debug(),
+                        err.src().map(|s| s.name())
+                    );
                     break 'main_loop;
+                }
+                MessageView::Warning(warn) => {
+                    warn!(
+                        "GStreamer pipeline warning: {}, Debug info: {:?}",
+                        warn.error(),
+                        warn.debug()
+                    );
+                }
+                MessageView::Info(info_msg) => {
+                    info!(
+                        "GStreamer pipeline info: {}, Debug info: {:?}",
+                        info_msg.error(),
+                        info_msg.debug()
+                    );
+                }
+                MessageView::StateChanged(state_changed) => {
+                    if state_changed.src().map(|s| s == &pipeline).unwrap_or(false) {
+                        debug!(
+                            "Pipeline state changed from {:?} to {:?}",
+                            state_changed.old(),
+                            state_changed.current()
+                        );
+                    }
                 }
                 _ => (),
             }
@@ -321,21 +349,57 @@ pub fn audio_main(
                                 continue;
                             }
 
-                            // Playing状態への遷移を待つ
-                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
-                                (Ok(gst::StateChangeSuccess::Success), _, _) => {
-                                    info!("Pipeline successfully transitioned to Playing state");
+                            // Playing状態への遷移を待つ（busメッセージもチェック）
+                            let state_change_timeout = Instant::now();
+                            loop {
+                                // busメッセージをチェック
+                                while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
+                                    use gst::MessageView;
+                                    match msg.view() {
+                                        MessageView::Error(err) => {
+                                            error!(
+                                                "GStreamer error during state change: {}, Debug: {:?}",
+                                                err.error(),
+                                                err.debug()
+                                            );
+                                            break;
+                                        }
+                                        MessageView::Warning(warn) => {
+                                            warn!(
+                                                "GStreamer warning during state change: {}, Debug: {:?}",
+                                                warn.error(),
+                                                warn.debug()
+                                            );
+                                        }
+                                        _ => {}
+                                    }
                                 }
-                                (Ok(gst::StateChangeSuccess::Async), _, _) => {
-                                    info!("Pipeline is transitioning to Playing state (async)");
+
+                                // 状態を確認
+                                match pipeline.state(gst::ClockTime::from_mseconds(100)) {
+                                    (Ok(gst::StateChangeSuccess::Success), gst::State::Playing, _) => {
+                                        info!("Pipeline successfully transitioned to Playing state");
+                                        break;
+                                    }
+                                    (Ok(gst::StateChangeSuccess::Async), _, _) => {
+                                        // まだ遷移中
+                                        if Instant::now().duration_since(state_change_timeout) > std::time::Duration::from_secs(5) {
+                                            error!("Timeout waiting for Playing state");
+                                            break;
+                                        }
+                                    }
+                                    (Ok(state), current, _) => {
+                                        warn!("Unexpected state change result: {:?}, current: {:?}", state, current);
+                                        if Instant::now().duration_since(state_change_timeout) > std::time::Duration::from_secs(5) {
+                                            break;
+                                        }
+                                    }
+                                    (Err(e), _, _) => {
+                                        error!("Failed to wait for Playing state: {}", e);
+                                        break;
+                                    }
                                 }
-                                (Ok(state), _, _) => {
-                                    warn!("Pipeline state change result: {:?}", state);
-                                }
-                                (Err(e), _, _) => {
-                                    error!("Failed to wait for Playing state: {}", e);
-                                    // エラーでも続行（非同期に再生が始まる可能性がある）
-                                }
+                                std::thread::sleep(std::time::Duration::from_millis(50));
                             }
 
                             current_sound = Some(new_sound.clone());
