@@ -371,22 +371,66 @@ pub fn audio_main(
                             }
                             info!("Set pipeline to Paused state, waiting...");
 
-                            // Paused状態への遷移を待つ
-                            match pipeline.state(gst::ClockTime::from_seconds(10)) {
-                                (Ok(gst::StateChangeSuccess::Success), gst::State::Paused, _) => {
-                                    info!("Pipeline successfully transitioned to Paused state");
+                            // Paused状態への遷移を待つ（AsyncDoneまで待機）
+                            let paused_timeout = Instant::now();
+                            let mut paused_ok = false;
+                            loop {
+                                if Instant::now().duration_since(paused_timeout) > std::time::Duration::from_secs(10) {
+                                    error!("Timeout waiting for Paused state");
+                                    break;
                                 }
-                                (Ok(gst::StateChangeSuccess::Async), current, _) => {
-                                    warn!("Pipeline Paused state is Async, current: {:?}", current);
-                                    // Async の場合でも続行
+
+                                // busメッセージをチェック（AsyncDoneを待つ）
+                                while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
+                                    use gst::MessageView;
+                                    match msg.view() {
+                                        MessageView::AsyncDone(_) => {
+                                            info!("AsyncDone received for Paused state");
+                                        }
+                                        MessageView::Error(err) => {
+                                            error!(
+                                                "GStreamer error during Paused transition: {}, Debug: {:?}",
+                                                err.error(),
+                                                err.debug()
+                                            );
+                                            break;
+                                        }
+                                        MessageView::StateChanged(sc) => {
+                                            if sc.src().map(|s| s == &pipeline).unwrap_or(false) {
+                                                info!(
+                                                    "Pipeline state changed during Paused wait: {:?} -> {:?}",
+                                                    sc.old(),
+                                                    sc.current()
+                                                );
+                                            }
+                                        }
+                                        _ => {}
+                                    }
                                 }
-                                (Ok(state), current, _) => {
-                                    warn!("Pipeline Paused state result: {:?}, current: {:?}", state, current);
+
+                                // 現在の状態を確認
+                                let (ret, current, pending) = pipeline.state(gst::ClockTime::ZERO);
+                                match (ret, current, pending) {
+                                    (Ok(_), gst::State::Paused, gst::State::VoidPending) => {
+                                        info!("Pipeline successfully reached Paused state");
+                                        paused_ok = true;
+                                        break;
+                                    }
+                                    (Ok(_), curr, pend) => {
+                                        debug!("Waiting for Paused: current={:?}, pending={:?}", curr, pend);
+                                    }
+                                    (Err(e), curr, _) => {
+                                        error!("Error waiting for Paused state: {}, current={:?}", e, curr);
+                                        break;
+                                    }
                                 }
-                                (Err(e), _, _) => {
-                                    error!("Failed to wait for Paused state: {}", e);
-                                    continue;
-                                }
+
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+
+                            if !paused_ok {
+                                error!("Failed to reach Paused state, skipping playback");
+                                continue;
                             }
 
                             // 再生を開始
@@ -396,14 +440,18 @@ pub fn audio_main(
                             }
                             info!("Set pipeline state to Playing, waiting for transition...");
 
-                            // Playing状態への遷移を待つ（busメッセージもチェック）
+                            // Playing状態への遷移を待つ（AsyncDoneメッセージを待つ）
                             let state_change_timeout = Instant::now();
                             let mut has_error = false;
+                            let mut playing_ok = false;
                             loop {
                                 // busメッセージをチェック
                                 while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
                                     use gst::MessageView;
                                     match msg.view() {
+                                        MessageView::AsyncDone(_) => {
+                                            info!("AsyncDone received for Playing state");
+                                        }
                                         MessageView::Error(err) => {
                                             error!(
                                                 "GStreamer error during state change: {}, Debug: {:?}",
@@ -421,12 +469,13 @@ pub fn audio_main(
                                             );
                                         }
                                         MessageView::StateChanged(sc) => {
-                                            debug!(
-                                                "State changed: {:?} -> {:?} (source: {:?})",
-                                                sc.old(),
-                                                sc.current(),
-                                                sc.src().map(|s| s.name())
-                                            );
+                                            if sc.src().map(|s| s == &pipeline).unwrap_or(false) {
+                                                info!(
+                                                    "Pipeline state changed: {:?} -> {:?}",
+                                                    sc.old(),
+                                                    sc.current()
+                                                );
+                                            }
                                         }
                                         _ => {}
                                     }
@@ -438,43 +487,37 @@ pub fn audio_main(
                                 }
 
                                 // 状態を確認
-                                match pipeline.state(gst::ClockTime::from_mseconds(100)) {
-                                    (Ok(gst::StateChangeSuccess::Success), gst::State::Playing, _) => {
-                                        info!("Pipeline successfully transitioned to Playing state");
+                                let elapsed = Instant::now().duration_since(state_change_timeout);
+                                let (ret, current, pending) = pipeline.state(gst::ClockTime::ZERO);
+                                match (ret, current, pending) {
+                                    (Ok(_), gst::State::Playing, gst::State::VoidPending) => {
+                                        info!("Pipeline successfully transitioned to Playing state (elapsed: {:?})", elapsed);
+                                        playing_ok = true;
                                         break;
                                     }
-                                    (Ok(gst::StateChangeSuccess::Async), current, _) => {
-                                        // まだ遷移中
-                                        let elapsed = Instant::now().duration_since(state_change_timeout);
+                                    (Ok(_), curr, pend) => {
                                         debug!(
-                                            "State transition in progress (Async), current: {:?}, elapsed: {:?}",
-                                            current,
+                                            "State transition in progress, current: {:?}, pending: {:?}, elapsed: {:?}",
+                                            curr,
+                                            pend,
                                             elapsed
                                         );
-                                        if elapsed > std::time::Duration::from_secs(5) {
+                                        if elapsed > std::time::Duration::from_secs(10) {
                                             error!("Timeout waiting for Playing state after {:?}", elapsed);
                                             break;
                                         }
                                     }
-                                    (Ok(state), current, _) => {
-                                        warn!(
-                                            "Unexpected state change result: {:?}, current: {:?}",
-                                            state, current
-                                        );
-                                        if Instant::now().duration_since(state_change_timeout) > std::time::Duration::from_secs(5) {
-                                            error!("Timeout with unexpected state");
-                                            break;
-                                        }
-                                    }
-                                    (Err(e), current, _) => {
-                                        error!(
-                                            "Failed to wait for Playing state: {}, current: {:?}",
-                                            e, current
-                                        );
+                                    (Err(e), curr, _) => {
+                                        error!("Error waiting for Playing state: {}, current={:?}", e, curr);
                                         break;
                                     }
                                 }
+
                                 std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+
+                            if !playing_ok {
+                                error!("Failed to reach Playing state");
                             }
 
                             // 最終的な状態を確認
