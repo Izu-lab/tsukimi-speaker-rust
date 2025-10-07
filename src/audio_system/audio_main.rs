@@ -10,6 +10,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 
+// 音源切り替えリクエスト
+struct SwitchRequest {
+    desired_sound: String,
+    seek_position_ns: u64,
+}
+
 // 再生状態を管理するためのenum
 enum PlaybackState {
     WaitingForFirstSync,
@@ -178,6 +184,10 @@ pub fn audio_main(
     // アクティブ/インアクティブの2系統を保持
     let mut active: Option<PipelineState> = None;
     let mut standby: Option<PipelineState> = None;
+
+    // 音源切り替え用のチャネル
+    let (switch_tx, mut switch_rx) = mpsc::channel::<PipelineState>(1);
+    let (switch_request_tx, mut switch_request_rx) = mpsc::channel::<SwitchRequest>(1);
 
     // 同期関連
     let mut playback_start_time = Instant::now();
@@ -349,56 +359,19 @@ pub fn audio_main(
                     sound_map.get(&device.address).cloned().unwrap_or_else(|| default_sound.clone())
                 } else { default_sound.clone() };
 
-                if desired_sound != current_sound {
-                    info!(from=%current_sound, to=%desired_sound, "🔄 音源切り替え開始");
-                    switching = true;
+                // 非同期切り替えの完了チェック
+                if let Ok(new_pipeline) = switch_rx.try_recv() {
+                    info!("✅ 非同期切り替え完了、新パイプラインを適用");
 
-                    // スタンバイパイプラインがあれば停止して破棄
-                    if let Some(old_standby) = standby.take() {
-                        let _ = old_standby.pipeline.set_state(gst::State::Null);
+                    // 旧パイプラインを停止
+                    if let Some(old) = active.take() {
+                        let _ = old.pipeline.set_state(gst::State::Null);
                     }
 
-                    // 新しいパイプラインを構築
-                    info!("📦 新しいパイプラインを構築中...");
-                    let next = build_pipeline(&desired_sound)?;
+                    // 新パイプラインをアクティブに
+                    active = Some(new_pipeline);
 
-                    // volume=1.0でPlaying状態に設定
-                    set_volume(&next.volume, 1.0);
-                    if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
-
-                    // 独自管理のシーク位置を使ってシーク（Paused状態で）
-                    info!("⏸️  Paused状態で独自シーク位置 {} ns にシーク", current_seek_position_ns);
-                    let _ = next.pipeline.set_state(gst::State::Paused);
-                    wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(3), "switch_pause");
-
-                    let seek_position = gst::ClockTime::from_nseconds(current_seek_position_ns);
-                    let _ = next.pipeline.seek_simple(
-                        gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
-                        seek_position
-                    );
-                    // シーク完了を待つ
-                    let _ = next.bus.timed_pop_filtered(
-                        Some(gst::ClockTime::from_mseconds(500)),
-                        &[gst::MessageType::AsyncDone]
-                    );
-                    info!("✓ シーク完了");
-
-                    // Playing状態に遷移
-                    info!("▶️  パイプラインをPlaying状態に設定");
-                    let _ = next.pipeline.set_state(gst::State::Playing);
-
-                    // 旧パイプラインを即座に停止
-                    info!("🛑 旧パイプラインを停止");
-                    if let Some(old) = active.take() {
-                         let _ = old.pipeline.set_state(gst::State::Null);
-                     }
-
-                    // 切替確定
-                    current_sound = desired_sound.clone();
-                    active = Some(next);
-                    standby = None;
-
-                    // 同期を再設定（独自位置管理の更新タイミングをリセット）
+                    // 同期を再設定
                     last_position_update = Instant::now();
                     playback_start_time = Instant::now();
                     if let Some(t) = last_server_time_ns {
@@ -408,6 +381,69 @@ pub fn audio_main(
                     switching = false;
                     last_switch_end = Some(Instant::now());
                     info!("🎉 音源切り替え完了");
+                }
+
+                // 音源切り替えリクエスト処理
+                if desired_sound != current_sound && !switching {
+                    info!(from=%current_sound, to=%desired_sound, "🔄 音源切り替えリクエスト送信");
+                    switching = true;
+                    current_sound = desired_sound.clone();
+
+                    // スタンバイパイプラインがあれば停止して破棄
+                    if let Some(old_standby) = standby.take() {
+                        let _ = old_standby.pipeline.set_state(gst::State::Null);
+                    }
+
+                    // 非同期切り替えリクエストを送信
+                    let request = SwitchRequest {
+                        desired_sound: desired_sound.clone(),
+                        seek_position_ns: current_seek_position_ns,
+                    };
+
+                    let switch_tx_clone = switch_tx.clone();
+
+                    // 別スレッドで切り替え処理を実行
+                    std::thread::spawn(move || {
+                        info!("📦 非同期で新しいパイプラインを構築中...");
+
+                        match build_pipeline(&request.desired_sound) {
+                            Ok(next) => {
+                                // volume=1.0で設定
+                                set_volume(&next.volume, 1.0);
+                                if let Some(ref p) = next.pitch {
+                                    p.set_property("tempo", 1.0f32);
+                                }
+
+                                // Paused状態でシーク
+                                info!("⏸️  Paused状態で独自シーク位置 {} ns にシーク", request.seek_position_ns);
+                                let _ = next.pipeline.set_state(gst::State::Paused);
+                                wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(3), "async_switch_pause");
+
+                                let seek_position = gst::ClockTime::from_nseconds(request.seek_position_ns);
+                                let _ = next.pipeline.seek_simple(
+                                    gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+                                    seek_position
+                                );
+                                let _ = next.bus.timed_pop_filtered(
+                                    Some(gst::ClockTime::from_mseconds(500)),
+                                    &[gst::MessageType::AsyncDone]
+                                );
+                                info!("✓ シーク完了");
+
+                                // Playing状態に遷移
+                                info!("▶️  パイプラインをPlaying状態に設定");
+                                let _ = next.pipeline.set_state(gst::State::Playing);
+
+                                // 完成したパイプラインをメインスレッドに送信
+                                if let Err(e) = switch_tx_clone.blocking_send(next) {
+                                    error!("Failed to send new pipeline: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to build pipeline: {}", e);
+                            }
+                        }
+                    });
                 }
             }
         }
