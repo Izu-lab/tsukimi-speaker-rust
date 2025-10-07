@@ -72,7 +72,7 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
             if duration.nseconds() > 0 {
                 let seek_time_ns = server_time_ns % duration.nseconds();
                 let seek_time = gst::ClockTime::from_nseconds(seek_time_ns);
-                pipeline.seek_simple(gst::SeekFlags::FLUSH, seek_time)?;
+                pipeline.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, seek_time)?;
                 if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
                     info!(?seek_time, "Seek completed (AsyncDone)");
                 } else {
@@ -270,6 +270,9 @@ pub fn audio_main(
                     if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
                     set_volume(&next.volume, 0.0);
                     let _ = next.pipeline.set_state(gst::State::Playing);
+
+                    // デコードウォームアップ: 再生直後のパーサ再同期やプリロールが落ち着くまで少し待つ
+                    std::thread::sleep(Duration::from_millis(80));
 
                     // クロスフェード（短時間）
                     if let Some(ref act) = active {
