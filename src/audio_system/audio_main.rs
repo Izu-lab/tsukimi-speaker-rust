@@ -16,8 +16,15 @@ enum PlaybackState {
     Playing,
 }
 
-fn build_pipeline(sound_path: &str) -> Result<(gst::Pipeline, gst::Bus, Option<gst::Element>, gst::Element, gst::Element)> {
-    // pitch要素を含むパイプラインを構築
+struct PipelineState {
+    pipeline: gst::Pipeline,
+    bus: gst::Bus,
+    pitch: Option<gst::Element>,
+    filesrc: gst::Element,
+    volume: gst::Element,
+}
+
+fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
     let pipeline_str = format!(
         "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! autoaudiosink",
         sound_path
@@ -25,20 +32,11 @@ fn build_pipeline(sound_path: &str) -> Result<(gst::Pipeline, gst::Bus, Option<g
     let pipeline = gst::parse::launch(&pipeline_str)?
         .downcast::<gst::Pipeline>()
         .map_err(|_| anyhow!("Failed to downcast to Pipeline"))?;
-
-    let bus = pipeline
-        .bus()
-        .ok_or_else(|| anyhow!("Failed to get bus from pipeline"))?;
-
-    let filesrc = pipeline
-        .by_name("src")
-        .ok_or_else(|| anyhow!("filesrc not found"))?;
-    let volume = pipeline
-        .by_name("vol")
-        .ok_or_else(|| anyhow!("volume not found"))?;
+    let bus = pipeline.bus().ok_or_else(|| anyhow!("Failed to get bus from pipeline"))?;
+    let filesrc = pipeline.by_name("src").ok_or_else(|| anyhow!("filesrc not found"))?;
+    let volume = pipeline.by_name("vol").ok_or_else(|| anyhow!("volume not found"))?;
     let pitch = pipeline.by_name("pch");
-
-    Ok((pipeline, bus, pitch, filesrc, volume))
+    Ok(PipelineState { pipeline, bus, pitch, filesrc, volume })
 }
 
 fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duration, label: &str) -> bool {
@@ -67,7 +65,6 @@ fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duratio
 }
 
 fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns: u64) -> Result<()> {
-    // durationが未決定なことがあるため、短時間ポーリングして取得を待つ
     let start = Instant::now();
     let timeout = Duration::from_secs(3);
     loop {
@@ -90,6 +87,10 @@ fn seek_to_server_time(pipeline: &gst::Pipeline, bus: &gst::Bus, server_time_ns:
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+fn set_volume(volume: &gst::Element, v: f64) {
+    volume.set_property("volume", v);
 }
 
 #[instrument(skip(rx, time_sync_rx, sound_map))]
@@ -123,81 +124,73 @@ pub fn audio_main(
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
-    // 最初のパイプラインを構築
-    let (mut pipeline, mut bus, mut pitch, mut filesrc, _volume) = build_pipeline(&current_sound)?;
-    pipeline.set_state(gst::State::Paused)?;
-    wait_for_state(&pipeline, gst::State::Paused, Duration::from_secs(10), "initial_pause");
+    // アクティブ/インアクティブの2系統を保持
+    let mut active: Option<PipelineState> = None;
+    let mut standby: Option<PipelineState> = None;
 
     // 同期関連
-    let mut current_rate = 1.0f64;
-    let mut playback_start_time = Instant::now(); // 再生開始/直近seekの瞬間の実時間
-    let mut initial_server_time_ns = 0u64; // ↑の瞬間のサーバー時間
-    let mut last_server_time_ns: Option<u64> = None; // 直近で受信したサーバー時間
+    let mut playback_start_time = Instant::now();
+    let mut initial_server_time_ns = 0u64;
+    let mut last_server_time_ns: Option<u64> = None;
 
-    // 時刻同期待機のタイムアウト（必要なら延長可）
     let sync_wait_start = Instant::now();
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 
-    // バスのEOS/エラー処理はメインループ内で実施
     'main_loop: loop {
-        // --- GStreamerメッセージ処理 ---
-        while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
-            use gst::MessageView;
-            match msg.view() {
-                MessageView::Eos(_) => {
-                    info!("End-of-stream reached. Looping playback.");
-                    if let Err(e) = pipeline.seek_simple(gst::SeekFlags::FLUSH, gst::ClockTime::from_seconds(0)) {
-                        error!(%e, "Failed to seek to beginning for looping");
+        // バス処理（アクティブ優先、スタンバイも確認）
+        if let Some(ref act) = active {
+            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(5)) {
+                use gst::MessageView;
+                match msg.view() {
+                    MessageView::Eos(_) => {
+                        info!("Active pipeline EOS, looping");
+                        let _ = act.pipeline.seek_simple(gst::SeekFlags::FLUSH, gst::ClockTime::from_seconds(0));
                     }
-                }
-                MessageView::Error(err) => {
-                    error!(
-                        error = %err.error(),
-                        debug = ?err.debug(),
-                        src = ?err.src().map(|s| s.name()),
-                        "GStreamer pipeline error"
-                    );
-                    break 'main_loop;
-                }
-                MessageView::Warning(warn_msg) => {
-                    warn!(
-                        warn = %warn_msg.error(),
-                        debug = ?warn_msg.debug(),
-                        "GStreamer pipeline warning"
-                    );
-                }
-                MessageView::StateChanged(state_changed) => {
-                    if state_changed.src().map(|s| s == &pipeline).unwrap_or(false) {
-                        debug!(old = ?state_changed.old(), current = ?state_changed.current(), "Pipeline state changed");
+                    MessageView::Error(err) => {
+                        error!(error=%err.error(), debug=?err.debug(), src=?err.src().map(|s| s.name()), "Active pipeline error");
+                        break 'main_loop;
                     }
+                    _ => {}
                 }
-                _ => {}
+            }
+        }
+        if let Some(ref stdb) = standby {
+            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_mseconds(1)) {
+                use gst::MessageView;
+                match msg.view() {
+                    MessageView::Error(err) => {
+                        warn!(error=%err.error(), debug=?err.debug(), src=?err.src().map(|s| s.name()), "Standby pipeline error");
+                    }
+                    _ => {}
+                }
             }
         }
 
-        // 最新のサーバー時間を可能な限り吸い上げる
-        while let Ok(t) = time_sync_rx.try_recv() {
-            last_server_time_ns = Some(t);
-        }
+        // 最新サーバー時間を吸い上げ
+        while let Ok(t) = time_sync_rx.try_recv() { last_server_time_ns = Some(t); }
 
-        // --- 再生状態に応じた処理 ---
         match playback_state {
             PlaybackState::WaitingForFirstSync => {
-                if last_server_time_ns.is_some() {
-                    let server_time_ns = last_server_time_ns.unwrap();
-                    // 再生開始前にシーク
-                    if let Err(e) = seek_to_server_time(&pipeline, &bus, server_time_ns) {
-                        warn!(%e, "Seek before first play failed");
-                    }
-                    pipeline.set_state(gst::State::Playing)?;
-                    info!("Pipeline state set to Playing after first sync");
+                if let Some(server_time_ns) = last_server_time_ns {
+                    // 初回アクティブを作成
+                    let act = build_pipeline(&current_sound)?;
+                    let _ = act.pipeline.set_state(gst::State::Paused);
+                    wait_for_state(&act.pipeline, gst::State::Paused, Duration::from_secs(10), "initial_pause");
+                    let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
+                    if let Some(ref p) = act.pitch { p.set_property("tempo", 1.0f32); }
+                    set_volume(&act.volume, 1.0);
+                    let _ = act.pipeline.set_state(gst::State::Playing);
+                    active = Some(act);
+
                     playback_start_time = Instant::now();
                     initial_server_time_ns = server_time_ns;
                     playback_state = PlaybackState::Playing;
                 } else if Instant::now().duration_since(sync_wait_start) > SYNC_TIMEOUT {
-                    // サーバー時間が来ない場合にフォールバック
-                    warn!("Time sync timeout. Starting playback without sync.");
-                    pipeline.set_state(gst::State::Playing)?;
+                    // 同期なしフォールバック
+                    let act = build_pipeline(&current_sound)?;
+                    let _ = act.pipeline.set_state(gst::State::Playing);
+                    set_volume(&act.volume, 1.0);
+                    active = Some(act);
                     playback_start_time = Instant::now();
                     initial_server_time_ns = 0;
                     playback_state = PlaybackState::Playing;
@@ -209,52 +202,36 @@ pub fn audio_main(
                     info!(?new_setting, "Received new sound setting");
                     *sound_setting.lock().unwrap() = new_setting;
                 }
-                // デバイス一覧更新
+                // デバイス更新
                 while let Ok(device_info) = rx.try_recv() {
                     detected_devices.insert(device_info.address.clone(), device_info);
                 }
-                // 古いデバイスのクリーンアップ
                 if Instant::now().duration_since(last_cleanup) > CLEANUP_INTERVAL {
                     let initial_count = detected_devices.len();
-                    detected_devices.retain(|_, device_info| Instant::now().duration_since(device_info.last_seen) < CLEANUP_INTERVAL);
-                    if initial_count != detected_devices.len() {
-                        debug!("Cleaned up old devices.");
-                    }
+                    detected_devices.retain(|_, d| Instant::now().duration_since(d.last_seen) < CLEANUP_INTERVAL);
+                    if initial_count != detected_devices.len() { debug!("Cleaned up old devices."); }
                     last_cleanup = Instant::now();
                 }
 
-                // ドリフト補正
-                if let Some(server_time_ns) = last_server_time_ns {
+                // ドリフト補正（アクティブ側のみ）
+                if let (Some(server_time_ns), Some(ref act)) = (last_server_time_ns, active.as_ref()) {
                     if initial_server_time_ns != 0 {
                         let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
                         let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
                         let diff_real_ns = server_elapsed - client_elapsed;
                         let diff_abs_s = (diff_real_ns.abs() as f64) / 1e9;
-
                         let new_rate: f64 = if diff_abs_s > 1.0 {
-                            warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected, seeking.");
-                            if let Err(e) = seek_to_server_time(&pipeline, &bus, server_time_ns) {
-                                error!(%e, "Seek failed during drift correction");
-                            }
-                            playback_start_time = Instant::now();
-                            initial_server_time_ns = server_time_ns;
+                            warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected, seeking active.");
+                            let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
                             1.0
                         } else {
                             let diff_s = diff_real_ns as f64 / 1e9;
                             const CORRECTION_TIME_S: f64 = 2.0;
-                            let correction_rate = diff_s / CORRECTION_TIME_S;
-                            (1.0 + correction_rate).clamp(0.9, 1.1)
+                            (1.0 + diff_s / CORRECTION_TIME_S).clamp(0.9, 1.1)
                         };
-
-                        if (new_rate - current_rate).abs() > 1e-6 {
-                            if let Some(ref p) = pitch {
-                                // tempo プロパティで速度補正
-                                p.set_property("tempo", new_rate as f32);
-                            } else {
-                                warn!("pitch element not found; skipping tempo update");
-                            }
-                            current_rate = new_rate;
-                        }
+                        if let Some(ref p) = act.pitch { p.set_property("tempo", new_rate as f32); }
+                        playback_start_time = Instant::now();
+                        initial_server_time_ns = server_time_ns;
                     }
                 }
 
@@ -263,81 +240,69 @@ pub fn audio_main(
                     let sound_map = sound_map.lock().unwrap();
                     let my_addr_opt_clone = my_address.lock().unwrap().clone();
                     let points = *current_points.lock().unwrap();
-
-                    let mut candidates: Vec<_> = detected_devices
-                        .values()
-                        .filter(|d| sound_map.contains_key(&d.address))
-                        .collect();
-
+                    let mut candidates: Vec<_> = detected_devices.values().filter(|d| sound_map.contains_key(&d.address)).collect();
                     candidates.sort_by(|a, b| {
                         let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
                         let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
                         b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
                     });
-
                     candidates.first().cloned()
                 };
 
-                // 望ましいサウンドを決定
                 let desired_sound = if let Some(device) = best_device {
                     let sound_map = sound_map.lock().unwrap();
                     sound_map.get(&device.address).cloned().unwrap_or_else(|| default_sound.clone())
-                } else {
-                    default_sound.clone()
-                };
+                } else { default_sound.clone() };
 
-                // 音源切替（サーバー時間で同期）
                 if desired_sound != current_sound {
-                    info!(from = %current_sound, to = %desired_sound, "Switching sound (in-place)");
+                    info!(from=%current_sound, to=%desired_sound, "Parallel switch start");
+                    // 事前準備: スタンバイを構築/再利用
+                    let next = if let Some(st) = standby.take() {
+                         st.filesrc.set_property("location", &desired_sound);
+                         st
+                     } else {
+                         build_pipeline(&desired_sound)?
+                     };
+                    // Paused → シーク → volume=0 → Playing
+                    let _ = next.pipeline.set_state(gst::State::Paused);
+                    wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(10), "standby_pause");
+                    if let Some(server_time_ns) = last_server_time_ns { let _ = seek_to_server_time(&next.pipeline, &next.bus, server_time_ns); }
+                    if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
+                    set_volume(&next.volume, 0.0);
+                    let _ = next.pipeline.set_state(gst::State::Playing);
 
-                    // 事前チェック
-                    if !desired_sound.is_empty() {
-                        let sound_path = std::path::Path::new(&desired_sound);
-                        if !sound_path.exists() {
-                            error!("Sound file does not exist: {}", desired_sound);
-                            continue;
+                    // クロスフェード（短時間）
+                    if let Some(ref act) = active {
+                        let steps = 6;
+                        let step_ms = 40; // 合計 ~240ms
+                        for i in 0..=steps {
+                            let a = 1.0 - (i as f64) / (steps as f64);
+                            let b = (i as f64) / (steps as f64);
+                            set_volume(&act.volume, a);
+                            set_volume(&next.volume, b);
+                            std::thread::sleep(Duration::from_millis(step_ms));
                         }
-                    } else {
-                        warn!("Sound file name is empty, skipping switch.");
-                        continue;
                     }
 
-                    // 一時停止（Nullにしない）
-                    if let Err(e) = pipeline.set_state(gst::State::Paused) {
-                        error!(%e, "Failed to pause pipeline for switch");
-                        continue;
-                    }
-                    wait_for_state(&pipeline, gst::State::Paused, Duration::from_secs(5), "switch_to_paused");
+                    // 旧パイプラインを停止
+                    if let Some(old) = active.take() {
+                         let _ = old.pipeline.set_state(gst::State::Null);
+                     }
 
-                    // ロケーション更新
-                    filesrc.set_property("location", &desired_sound);
-                    info!("filesrc location updated");
-
-                    // サーバー時間にシーク（duration更新を待ちながら）
-                    if let Some(server_time_ns) = last_server_time_ns {
-                        let _ = seek_to_server_time(&pipeline, &bus, server_time_ns);
-                        playback_start_time = Instant::now();
-                        initial_server_time_ns = server_time_ns;
-                        current_rate = 1.0;
-                    } else {
-                        playback_start_time = Instant::now();
-                        initial_server_time_ns = 0;
-                        current_rate = 1.0;
-                    }
-
-                    // 再生再開
-                    if let Err(e) = pipeline.set_state(gst::State::Playing) {
-                        error!(%e, "Failed to resume Playing after switch");
-                        continue;
-                    }
-
+                    // 切替確定
                     current_sound = desired_sound;
+                    active = Some(next);
+                    standby = None; // メモリ節約: 必要時に再構築
+                    playback_start_time = Instant::now();
+                    if let Some(t) = last_server_time_ns { initial_server_time_ns = t; }
+                    info!("Parallel switch completed");
                 }
             }
         }
     }
 
     // 終了処理
-    let _ = pipeline.set_state(gst::State::Null);
+    if let Some(act) = active { let _ = act.pipeline.set_state(gst::State::Null); }
+    if let Some(st) = standby { let _ = st.pipeline.set_state(gst::State::Null); }
     Ok(())
 }
