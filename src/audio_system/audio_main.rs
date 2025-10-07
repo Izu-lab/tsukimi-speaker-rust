@@ -34,9 +34,13 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let sink = sink_name();
     let desc = format!(
         concat!(
-            "interaudiosrc channel=a ! audioconvert ! volume name=volA ! queue2 max-size-time=200000000 ! mix. ",
-            "interaudiosrc channel=b ! audioconvert ! volume name=volB ! queue2 max-size-time=200000000 ! mix. ",
-            "audiomixer name=mix ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! {}"
+            "interaudiosrc channel=a ! audioconvert ! audioresample ! ",
+            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
+            "volume name=volA ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! mix. ",
+            "interaudiosrc channel=b ! audioconvert ! audioresample ! ",
+            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
+            "volume name=volB ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! mix. ",
+            "audiomixer name=mix latency=50000000 ! audioconvert ! {}"
         ),
         sink
     );
@@ -53,7 +57,8 @@ fn build_decoder_pipeline(sound_path: &str, channel: &str) -> Result<DecoderStat
         concat!(
             "filesrc location={} ! decodebin ! audioconvert ! audioresample ! ",
             "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
-            "pitch name=pch{} ! interaudiosink channel={}"
+            "pitch name=pch{} ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 ! ",
+            "interaudiosink channel={} buffer-time=50000000"
         ),
         sound_path,
         channel,
@@ -206,31 +211,70 @@ pub fn audio_main(
                 if desired != current_sound {
                     info!(from=%current_sound, to=%desired, "Switch using audiomixer");
                     let standby_channel = if active_channel == "a" { "b" } else { "a" };
+
+                    // フェード前: 新しいチャンネルのボリュームを0に設定
+                    let (from_vol, to_vol) = if standby_channel == "b" {
+                        (&mixer.vol_a, &mixer.vol_b)
+                    } else {
+                        (&mixer.vol_b, &mixer.vol_a)
+                    };
+                    set_vol(to_vol, 0.0);
+
                     // 既存スタンバイを廃棄
                     if let Some(st) = standby.take() { let _ = st.pipeline.set_state(gst::State::Null); }
+
                     // 新スタンバイ作成
                     let next_dec = build_decoder_pipeline(&desired, standby_channel)?;
                     next_dec.pipeline.set_state(gst::State::Paused)?;
                     wait_for_state(&next_dec.pipeline, gst::State::Paused, Duration::from_secs(5), "standby_paused");
-                    if let Some(t) = last_server_time_ns { seek_pipeline_to_time(&next_dec.pipeline, &next_dec.bus, t)?; initial_server_time_ns = t; }
+                    if let Some(t) = last_server_time_ns {
+                        seek_pipeline_to_time(&next_dec.pipeline, &next_dec.bus, t)?;
+                        initial_server_time_ns = t;
+                    }
                     if let Some(ref p) = next_dec.pitch { p.set_property("tempo", 1.0f32); }
                     next_dec.pipeline.set_state(gst::State::Playing)?;
-                    // flowing 待ち
-                    wait_until_flowing(&next_dec.pipeline, Duration::from_millis(500));
+
+                    // flowing 待ち（新しいストリームが実際に流れ始めるまで待機）
+                    if !wait_until_flowing(&next_dec.pipeline, Duration::from_millis(1000)) {
+                        warn!("New decoder not flowing in time, proceeding anyway");
+                    }
+
+                    // さらに少し待機して、バッファを安定させる
+                    std::thread::sleep(Duration::from_millis(100));
 
                     // 等電力クロスフェード（volA/volB）
-                    let (from_vol, to_vol) = if standby_channel == "b" { (&mixer.vol_a, &mixer.vol_b) } else { (&mixer.vol_b, &mixer.vol_a) };
-                    let steps = 16; let step_ms = 30;
-                    for i in 0..=steps { let t = (i as f64)/(steps as f64); let theta = t*std::f64::consts::FRAC_PI_2; let a = theta.cos(); let b = theta.sin(); set_vol(from_vol, a); set_vol(to_vol, b); std::thread::sleep(Duration::from_millis(step_ms)); }
+                    let steps = 20; // ステップ数を増やしてより滑らかに
+                    let step_ms = 25;
+                    for i in 0..=steps {
+                        let t = (i as f64)/(steps as f64);
+                        let theta = t * std::f64::consts::FRAC_PI_2;
+                        let a = theta.cos();
+                        let b = theta.sin();
+                        set_vol(from_vol, a);
+                        set_vol(to_vol, b);
+                        std::thread::sleep(Duration::from_millis(step_ms));
+                    }
 
-                    // 古いデコーダ停止
-                    if let Some(old) = active.take() { let _ = old.pipeline.set_state(gst::State::Null); }
+                    // フェード完了後: 古いデコーダを停止
+                    if let Some(old) = active.take() {
+                        let _ = old.pipeline.set_state(gst::State::Null);
+                    }
+
                     // 掛け替え
                     active = Some(next_dec);
                     current_sound = desired;
                     active_channel = standby_channel.into();
-                    // フェード後: 出力ボリュームを固定
-                    if active_channel == "a" { set_vol(&mixer.vol_a, 1.0); set_vol(&mixer.vol_b, 0.0); } else { set_vol(&mixer.vol_a, 0.0); set_vol(&mixer.vol_b, 1.0); }
+
+                    // 最終的なボリューム状態を確実に設定
+                    if active_channel == "a" {
+                        set_vol(&mixer.vol_a, 1.0);
+                        set_vol(&mixer.vol_b, 0.0);
+                    } else {
+                        set_vol(&mixer.vol_a, 0.0);
+                        set_vol(&mixer.vol_b, 1.0);
+                    }
+
+                    info!(channel=%active_channel, "Fade completed");
                 }
             }
         }
