@@ -277,11 +277,67 @@ pub fn audio_main(
                     if let Some(new_sound) = sound_map.get(&device.address) {
                         if current_sound.as_deref() != Some(new_sound.as_str()) {
                             info!("Switching sound to {}", new_sound);
-                            pipeline.set_state(gst::State::Null)?;
-                            let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
+
+                            // ファイルの存在確認（パスがある場合）
+                            if !new_sound.is_empty() {
+                                let sound_path = std::path::Path::new(new_sound);
+                                if !sound_path.exists() {
+                                    error!("Sound file does not exist: {}", new_sound);
+                                    continue;
+                                }
+                                info!("Sound file exists: {}", new_sound);
+                            } else {
+                                warn!("Sound file name is empty, skipping switch.");
+                                continue;
+                            }
+
+                            // パイプラインを停止
+                            if let Err(e) = pipeline.set_state(gst::State::Null) {
+                                error!("Failed to set pipeline to Null state: {}", e);
+                                continue;
+                            }
+
+                            // Null状態への遷移を待つ
+                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
+                                (Ok(gst::StateChangeSuccess::Success), _, _) => {
+                                    info!("Pipeline successfully transitioned to Null state");
+                                }
+                                (Ok(state), _, _) => {
+                                    warn!("Pipeline state change result: {:?}", state);
+                                }
+                                (Err(e), _, _) => {
+                                    error!("Failed to wait for Null state: {}", e);
+                                    continue;
+                                }
+                            }
+
+                            // ファイルパスを変更
                             filesrc.set_property("location", new_sound.clone());
-                            pipeline.set_state(gst::State::Playing)?;
-                            let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
+                            info!("Set new location: {}", new_sound);
+
+                            // 再生を開始
+                            if let Err(e) = pipeline.set_state(gst::State::Playing) {
+                                error!("Failed to set pipeline to Playing state: {}", e);
+                                continue;
+                            }
+
+                            // Playing状態への遷移を待つ
+                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
+                                (Ok(gst::StateChangeSuccess::Success), _, _) => {
+                                    info!("Pipeline successfully transitioned to Playing state");
+                                }
+                                (Ok(gst::StateChangeSuccess::Async), _, _) => {
+                                    info!("Pipeline is transitioning to Playing state (async)");
+                                }
+                                (Ok(state), _, _) => {
+                                    warn!("Pipeline state change result: {:?}", state);
+                                }
+                                (Err(e), _, _) => {
+                                    error!("Failed to wait for Playing state: {}", e);
+                                    // エラーでも続行（非同期に再生が始まる可能性がある）
+                                }
+                            }
+
                             current_sound = Some(new_sound.clone());
                             // 時間の基準点をリセット
                             playback_start_time = Instant::now();
@@ -293,11 +349,28 @@ pub fn audio_main(
                     let default_sound = "tsukimi-main.mp3";
                     if current_sound.as_deref() != Some(default_sound) {
                         info!("No device detected. Playing default sound: {}", default_sound);
-                        pipeline.set_state(gst::State::Null)?;
-                        let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
+
+                        // パイプラインを停止
+                        if let Err(e) = pipeline.set_state(gst::State::Null) {
+                            error!("Failed to set pipeline to Null state: {}", e);
+                            continue;
+                        }
+
+                        // Null状態への遷移を待つ
+                        let _ = pipeline.state(gst::ClockTime::from_seconds(5));
+
+                        // ファイルパスを変更
                         filesrc.set_property("location", default_sound);
-                        pipeline.set_state(gst::State::Playing)?;
-                        let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
+
+                        // 再生を開始
+                        if let Err(e) = pipeline.set_state(gst::State::Playing) {
+                            error!("Failed to set pipeline to Playing state: {}", e);
+                            continue;
+                        }
+
+                        // Playing状態への遷移を待つ
+                        let _ = pipeline.state(gst::ClockTime::from_seconds(5));
+
                         current_sound = Some(default_sound.to_string());
                         // 時間の基準点をリセット
                         playback_start_time = Instant::now();
