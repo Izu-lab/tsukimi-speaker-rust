@@ -139,7 +139,7 @@ pub fn audio_main(
                     initial_server_time_ns = 0;
 
                     // 初期ファイルを設定
-                    current_sound = Some("sound.mp3".to_string());
+                    current_sound = Some("tsukimi-main.mp3".to_string());
 
                     playback_state = PlaybackState::Playing;
                     continue;
@@ -177,7 +177,7 @@ pub fn audio_main(
                     initial_server_time_ns = server_time_ns;
 
                     // 初期ファイルを設定
-                    current_sound = Some("sound.mp3".to_string());
+                    current_sound = Some("tsukimi-main.mp3".to_string());
 
                     playback_state = PlaybackState::Playing;
                 }

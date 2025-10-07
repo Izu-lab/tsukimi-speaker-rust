@@ -15,12 +15,12 @@ use tracing::{debug, error, info, instrument, warn};
 /// place_typeに基づいてサウンドファイル名を決定する
 fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
     match place_type {
-        "projection_mapping" => "sound.mp3",
-        "buddhas_bowl" => "",
-        "jeweled_branch" => "",
-        "fire_rat_robe" => "",
-        "dragons_jewel" => "",
-        "swallows_cowry" => "",
+        "projection_mapping" => "tsukimi-hotoke.mp3",
+        "buddhas_bowl" => "tsukimi-hotoke.mp3",
+        "jeweled_branch" => "tsukimi-hotoke.mp3",
+        "fire_rat_robe" => "tsukimi-hotoke.mp3",
+        "dragons_jewel" => "tsukimi-hotoke.mp3",
+        "swallows_cowry" => "tsukimi-hotoke.mp3",
         _ => "tsukimi-main.mp3", // 未知の place_type のためのデフォルトサウンド
     }
 }
