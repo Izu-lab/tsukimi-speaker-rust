@@ -216,10 +216,30 @@ pub fn audio_main(
                     let my_addr_opt_clone = my_address.lock().unwrap().clone();
                     let points = *current_points.lock().unwrap();
 
+                    info!(
+                        sound_map_size = sound_map.len(),
+                        detected_devices_count = detected_devices.len(),
+                        ?sound_map,
+                        "Checking for best device"
+                    );
+
                     let mut candidates: Vec<_> = detected_devices
                         .values()
-                        .filter(|d| sound_map.contains_key(&d.address))
+                        .filter(|d| {
+                            let has_key = sound_map.contains_key(&d.address);
+                            let sound_file = sound_map.get(&d.address);
+                            debug!(
+                                address = %d.address,
+                                rssi = d.rssi,
+                                has_key = has_key,
+                                sound_file = ?sound_file,
+                                "Checking device"
+                            );
+                            has_key
+                        })
                         .collect();
+
+                    info!(candidates_count = candidates.len(), "Filtered candidates");
 
                     // ポイントとRSSIでソート
                     // 1. ポイントが高い順 (自分自身のデバイスであれば現在のポイント、そうでなければ0)
@@ -230,7 +250,17 @@ pub fn audio_main(
                         b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
                     });
 
-                    candidates.first().cloned()
+                    let best = candidates.first().cloned();
+                    if let Some(ref device) = best {
+                        info!(
+                            best_device_address = %device.address,
+                            best_device_rssi = device.rssi,
+                            "Selected best device"
+                        );
+                    } else {
+                        info!("No best device found");
+                    }
+                    best
                 };
 
                 if let Some(device) = best_device {

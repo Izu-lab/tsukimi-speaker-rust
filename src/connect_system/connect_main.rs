@@ -70,8 +70,9 @@ async fn run_device_service_client(
                                     // TODO: Handle TimeUpdate
                                 }
                                 Event::LocationUpdate(location_update) => {
-                                    debug!(?location_update, "LocationUpdate received");
+                                    info!(?location_update, "LocationUpdate received");
                                     let mut sound_map = sound_map.lock().unwrap();
+                                    info!(old_sound_map_size = sound_map.len(), "Before clearing sound_map");
                                     sound_map.clear();
                                     for loc in location_update.locations {
                                         // TODO: mp3を修正する
@@ -85,9 +86,16 @@ async fn run_device_service_client(
                                             "swallows_cowry" => "",
                                             _ => "sound.mp3", // 未知の place_type のためのデフォルトサウンド
                                         };
-                                        sound_map.insert(loc.address, sound_file.to_string());
+                                        info!(
+                                            address = %loc.address,
+                                            place_type = %loc.place_type,
+                                            sound_file = %sound_file,
+                                            is_empty = sound_file.is_empty(),
+                                            "Processing location entry"
+                                        );
+                                        sound_map.insert(loc.address.clone(), sound_file.to_string());
                                     }
-                                    info!(new_sound_map_size = sound_map.len(), "Updated sound_map");
+                                    info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with full contents");
                                 }
                                 Event::PointUpdate(point_update) => {
                                     debug!(?point_update, "PointUpdate received");
