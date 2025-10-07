@@ -332,16 +332,13 @@ pub fn audio_main(
 
                     // 新しいパイプラインを構築
                     info!("📦 新しいパイプラインを構築中...");
-                    std::thread::sleep(Duration::from_secs(2)); // デバッグ用待機
                     let next = build_pipeline(&desired_sound)?;
 
-                    // volume=0でPlaying状態に設定し、すぐに再生開始
-                    // (シークは行わない。クロスフェードの滑らかさを優先)
-                    set_volume(&next.volume, 0.0);
+                    // volume=1.0でPlaying状態に設定し、すぐに再生開始
+                    set_volume(&next.volume, 1.0);
                     if let Some(ref p) = next.pitch { p.set_property("tempo", 1.0f32); }
 
-                    info!("▶️  パイプラインをPlaying状態に設定（音量0で再生開始）");
-                    std::thread::sleep(Duration::from_secs(2)); // デバッグ用待機
+                    info!("▶️  パイプラインをPlaying状態に設定");
                     let _ = next.pipeline.set_state(gst::State::Playing);
 
                     // Playing状態になるまで待つ
@@ -349,33 +346,8 @@ pub fn audio_main(
                     wait_for_state(&next.pipeline, gst::State::Playing, Duration::from_secs(5), "standby_playing");
                     info!("✓ Playing状態に到達");
 
-                    // パイプラインが完全に安定し、データフローが開始されるまで待機
-                    info!("⏳ パイプライン安定化待機中（データフロー開始待ち）...");
-                    std::thread::sleep(Duration::from_secs(3)); // デバッグ用に大幅延長
-
-                    // クロスフェード（短時間）
-                    info!("🎚️  クロスフェード開始（この間、両方のパイプラインが同時再生されるはず）");
-                    if let Some(ref act) = active {
-                        let steps = 20;     // ステップ数を増やして長めに
-                        let step_ms = 100;  // ステップ間隔を長くして分かりやすく（合計 ~2秒）
-                        for i in 0..=steps {
-                            let t = (i as f64) / (steps as f64);
-                            let theta = t * std::f64::consts::FRAC_PI_2; // 0 -> π/2
-                            let a = theta.cos(); // 現行の振幅係数
-                            let b = theta.sin(); // 次の振幅係数
-                            set_volume(&act.volume, a);
-                            set_volume(&next.volume, b);
-                            if i % 5 == 0 {
-                                info!("  フェード進捗: {}/{}  (旧音量={:.2}, 新音量={:.2})", i, steps, a, b);
-                            }
-                            std::thread::sleep(Duration::from_millis(step_ms));
-                        }
-                    }
-                    info!("✅ クロスフェード完了");
-
-                    // 旧パイプラインを停止
+                    // 旧パイプラインを即座に停止
                     info!("🛑 旧パイプラインを停止");
-                    std::thread::sleep(Duration::from_secs(1)); // デバッグ用待機
                     if let Some(old) = active.take() {
                          let _ = old.pipeline.set_state(gst::State::Null);
                      }
@@ -385,8 +357,7 @@ pub fn audio_main(
                     active = Some(next);
                     standby = None;
 
-                    // 同期を再設定：新しいパイプラインは最初から再生しているので、
-                    // サーバー時間との同期は次の補正サイクルで行う
+                    // 同期を再設定
                     playback_start_time = Instant::now();
                     if let Some(t) = last_server_time_ns {
                         initial_server_time_ns = t;
@@ -395,7 +366,6 @@ pub fn audio_main(
                     switching = false;
                     last_switch_end = Some(Instant::now());
                     info!("🎉 音源切り替え完了");
-                    std::thread::sleep(Duration::from_secs(2)); // デバッグ用待機
                 }
             }
         }
