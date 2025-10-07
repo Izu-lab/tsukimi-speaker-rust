@@ -343,6 +343,52 @@ pub fn audio_main(
                             filesrc.set_property("location", new_sound.clone());
                             info!("Set new location: {}", new_sound);
 
+                            // Ready状態を経由してからPlayingに遷移
+                            if let Err(e) = pipeline.set_state(gst::State::Ready) {
+                                error!("Failed to set pipeline to Ready state: {}", e);
+                                continue;
+                            }
+                            info!("Set pipeline to Ready state, waiting...");
+
+                            // Ready状態への遷移を待つ
+                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
+                                (Ok(gst::StateChangeSuccess::Success), gst::State::Ready, _) => {
+                                    info!("Pipeline successfully transitioned to Ready state");
+                                }
+                                (Ok(state), current, _) => {
+                                    warn!("Pipeline Ready state result: {:?}, current: {:?}", state, current);
+                                }
+                                (Err(e), _, _) => {
+                                    error!("Failed to wait for Ready state: {}", e);
+                                    continue;
+                                }
+                            }
+
+                            // Pausedを経由
+                            if let Err(e) = pipeline.set_state(gst::State::Paused) {
+                                error!("Failed to set pipeline to Paused state: {}", e);
+                                continue;
+                            }
+                            info!("Set pipeline to Paused state, waiting...");
+
+                            // Paused状態への遷移を待つ
+                            match pipeline.state(gst::ClockTime::from_seconds(10)) {
+                                (Ok(gst::StateChangeSuccess::Success), gst::State::Paused, _) => {
+                                    info!("Pipeline successfully transitioned to Paused state");
+                                }
+                                (Ok(gst::StateChangeSuccess::Async), current, _) => {
+                                    warn!("Pipeline Paused state is Async, current: {:?}", current);
+                                    // Async の場合でも続行
+                                }
+                                (Ok(state), current, _) => {
+                                    warn!("Pipeline Paused state result: {:?}, current: {:?}", state, current);
+                                }
+                                (Err(e), _, _) => {
+                                    error!("Failed to wait for Paused state: {}", e);
+                                    continue;
+                                }
+                            }
+
                             // 再生を開始
                             if let Err(e) = pipeline.set_state(gst::State::Playing) {
                                 error!("Failed to set pipeline to Playing state: {}", e);
@@ -397,12 +443,12 @@ pub fn audio_main(
                                         info!("Pipeline successfully transitioned to Playing state");
                                         break;
                                     }
-                                    (Ok(gst::StateChangeSuccess::Async), current_state, _) => {
+                                    (Ok(gst::StateChangeSuccess::Async), current, _) => {
                                         // まだ遷移中
                                         let elapsed = Instant::now().duration_since(state_change_timeout);
                                         debug!(
                                             "State transition in progress (Async), current: {:?}, elapsed: {:?}",
-                                            current_state,
+                                            current,
                                             elapsed
                                         );
                                         if elapsed > std::time::Duration::from_secs(5) {
