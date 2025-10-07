@@ -317,13 +317,16 @@ pub fn audio_main(
                 if desired_sound != current_sound {
                     info!(from=%current_sound, to=%desired_sound, "Parallel switch start");
                     switching = true;
-                    // 事前準備: スタンバイを構築/再利用
-                    let next = if let Some(st) = standby.take() {
-                         st.filesrc.set_property("location", &desired_sound);
-                         st
-                     } else {
-                         build_pipeline(&desired_sound)?
-                     };
+
+                    // スタンバイパイプラインがあれば停止して破棄
+                    // (filesrcのlocationプロパティは動的に変更できないため、毎回新規構築)
+                    if let Some(old_standby) = standby.take() {
+                        let _ = old_standby.pipeline.set_state(gst::State::Null);
+                    }
+
+                    // 新しいパイプラインを構築
+                    let next = build_pipeline(&desired_sound)?;
+
                     // Paused → シーク → volume=0 → Playing
                     let _ = next.pipeline.set_state(gst::State::Paused);
                     wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(10), "standby_pause");
