@@ -162,10 +162,16 @@ pub fn audio_main(
     let sync_wait_start = Instant::now();
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 
+    // 最適化: durationのキャッシュ
+    let mut cached_duration_ns: Option<u64> = None;
+    let mut last_duration_query = Instant::now();
+    const DURATION_QUERY_INTERVAL: Duration = Duration::from_secs(1);
+
     'main_loop: loop {
-        // バス処理（アクティブ優先、スタンバイも確認）- タイムアウトを短縮
+        // バス処理（アクティブ優先、スタンバイも確認）- タイムアウトを適切に調整
         if let Some(ref act) = active {
-            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(1)) { // 5ms → 1ms
+            // 10msに変更：メッセージ処理の余裕を持たせる
+            while let Some(msg) = act.bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
                 use gst::MessageView;
                 match msg.view() {
                     MessageView::Eos(_) => {
@@ -176,12 +182,19 @@ pub fn audio_main(
                         error!(error=%err.error(), debug=?err.debug(), src=?err.src().map(|s| s.name()), "Active pipeline error");
                         break 'main_loop;
                     }
+                    MessageView::Buffering(buffering_msg) => {
+                        let percent = buffering_msg.percent();
+                        if percent < 100 {
+                            debug!(?percent, "Pipeline buffering");
+                        }
+                    }
                     _ => {}
                 }
             }
         }
         if let Some(ref stdb) = standby {
-            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_nseconds(500_000)) { // 1ms → 0.5ms
+            // スタンバイは1msで十分
+            while let Some(msg) = stdb.bus.timed_pop(gst::ClockTime::from_mseconds(1)) {
                 use gst::MessageView;
                 match msg.view() {
                     MessageView::Error(err) => {
@@ -206,13 +219,16 @@ pub fn audio_main(
                     if let Some(ref p) = act.pitch { p.set_property("tempo", 1.0f32); }
                     set_volume(&act.volume, 1.0);
                     let _ = act.pipeline.set_state(gst::State::Playing);
-                    active = Some(act);
 
-                    // 独自シーク位置を初期化
-                    if let Some(duration) = active.as_ref().and_then(|a| a.pipeline.query_duration::<gst::ClockTime>()) {
+                    // durationをキャッシュ
+                    if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
+                        cached_duration_ns = Some(duration.nseconds());
                         current_seek_position_ns = server_time_ns % duration.nseconds();
                     }
+
+                    active = Some(act);
                     last_position_update = Instant::now();
+                    last_duration_query = Instant::now();
 
                     playback_start_time = Instant::now();
                     initial_server_time_ns = server_time_ns;
@@ -222,10 +238,16 @@ pub fn audio_main(
                     let act = build_pipeline(&current_sound)?;
                     let _ = act.pipeline.set_state(gst::State::Playing);
                     set_volume(&act.volume, 1.0);
+
+                    if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
+                        cached_duration_ns = Some(duration.nseconds());
+                    }
+
                     active = Some(act);
 
                     current_seek_position_ns = 0;
                     last_position_update = Instant::now();
+                    last_duration_query = Instant::now();
 
                     playback_start_time = Instant::now();
                     initial_server_time_ns = 0;
@@ -238,12 +260,22 @@ pub fn audio_main(
                 current_seek_position_ns += elapsed_since_update.as_nanos() as u64;
                 last_position_update = Instant::now();
 
-                // 音源の長さでループ（必要に応じて）
-                if let Some(ref act) = active {
-                    if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                        if duration.nseconds() > 0 {
-                            current_seek_position_ns %= duration.nseconds();
+                // durationのクエリを削減：1秒に1回のみ
+                if Instant::now().duration_since(last_duration_query) > DURATION_QUERY_INTERVAL {
+                    if let Some(ref act) = active {
+                        if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
+                            if duration.nseconds() > 0 {
+                                cached_duration_ns = Some(duration.nseconds());
+                            }
                         }
+                    }
+                    last_duration_query = Instant::now();
+                }
+
+                // キャッシュされたdurationでループ
+                if let Some(duration_ns) = cached_duration_ns {
+                    if duration_ns > 0 {
+                        current_seek_position_ns %= duration_ns;
                     }
                 }
 
@@ -275,10 +307,10 @@ pub fn audio_main(
                         let new_rate: f64 = if diff_abs_s > 3.0 {
                             warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected (>3s), seeking active.");
                             let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
-                            // 独自シーク位置も更新
-                            if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                                if duration.nseconds() > 0 {
-                                    current_seek_position_ns = server_time_ns % duration.nseconds();
+                            // 独自シーク位置も更新、キャッシュされたdurationを使用
+                            if let Some(duration_ns) = cached_duration_ns {
+                                if duration_ns > 0 {
+                                    current_seek_position_ns = server_time_ns % duration_ns;
                                 }
                             }
                             1.0
@@ -294,7 +326,6 @@ pub fn audio_main(
                 }
 
                 // ベストデバイス選定
-                // RSSI閾値: この値を超えたデバイスのみが候補になる
                 const RSSI_THRESHOLD: i16 = -70;
 
                 let best_device = {
@@ -302,12 +333,10 @@ pub fn audio_main(
                     let my_addr_opt_clone = my_address.lock().unwrap().clone();
                     let points = *current_points.lock().unwrap();
 
-                    // RSSI閾値を超えたデバイスのみをフィルタリング
                     let mut candidates: Vec<_> = detected_devices.values()
                         .filter(|d| sound_map.contains_key(&d.address) && d.rssi > RSSI_THRESHOLD)
                         .collect();
 
-                    // ポイント優先、同じポイントならRSSI優先でソート
                     candidates.sort_by(|a, b| {
                         let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
                         let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
@@ -317,11 +346,9 @@ pub fn audio_main(
                     candidates.first().cloned()
                 };
 
-                // 全てのLocationが閾値を下回っているかチェック
                 let all_below_threshold = {
                     let sound_map = sound_map.lock().unwrap();
 
-                    // 現在再生中のサウンドに対応するデバイスを探す
                     let current_sound_device = detected_devices.values()
                         .find(|d| {
                             sound_map.get(&d.address)
@@ -329,16 +356,11 @@ pub fn audio_main(
                                 .unwrap_or(false)
                         });
 
-                    // 現在再生中のサウンドに対応するデバイスが閾値を下回っているかチェック
                     if let Some(device) = current_sound_device {
-                        // 現在のデバイスが閾値を下回っている場合のみtrue
                         device.rssi <= RSSI_THRESHOLD
                     } else if current_sound == default_sound {
-                        // すでにデフォルトサウンドの場合、閾値チェックをスキップ
                         false
                     } else {
-                        // 現在のサウンドに対応するデバイスが見つからない場合（通信途絶など）
-                        // 登録されている全デバイスが閾値を下回っているかチェック
                         let registered_devices: Vec<_> = detected_devices.values()
                             .filter(|d| sound_map.contains_key(&d.address))
                             .collect();
@@ -348,14 +370,11 @@ pub fn audio_main(
                 };
 
                 let desired_sound = if let Some(device) = best_device {
-                    // 閾値を超えたデバイスがある場合、そのデバイスのサウンドを使用
                     let sound_map = sound_map.lock().unwrap();
                     sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone())
                 } else if all_below_threshold {
-                    // 現在のLocationが閾値を下回った場合のみデフォルトサウンドに切り替え
                     default_sound.clone()
                 } else {
-                    // それ以外の場合（デバイスが検出されていない等）は現在のサウンドを維持
                     current_sound.clone()
                 };
 
@@ -371,8 +390,16 @@ pub fn audio_main(
                     // 新パイプラインをアクティブに
                     active = Some(new_pipeline);
 
+                    // durationキャッシュを更新
+                    if let Some(ref act) = active {
+                        if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
+                            cached_duration_ns = Some(duration.nseconds());
+                        }
+                    }
+
                     // 同期を再設定
                     last_position_update = Instant::now();
+                    last_duration_query = Instant::now();
                     playback_start_time = Instant::now();
                     if let Some(t) = last_server_time_ns {
                         initial_server_time_ns = t;
@@ -408,13 +435,11 @@ pub fn audio_main(
 
                         match build_pipeline(&request.desired_sound) {
                             Ok(next) => {
-                                // volume=1.0で設定
                                 set_volume(&next.volume, 1.0);
                                 if let Some(ref p) = next.pitch {
                                     p.set_property("tempo", 1.0f32);
                                 }
 
-                                // Paused状態でシーク
                                 info!("⏸️  Paused状態で独自シーク位置 {} ns にシーク", request.seek_position_ns);
                                 let _ = next.pipeline.set_state(gst::State::Paused);
                                 wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(3), "async_switch_pause");
@@ -430,7 +455,6 @@ pub fn audio_main(
                                 );
                                 info!("✓ シーク完了");
 
-                                // Playing状態に遷移
                                 info!("▶️  パイプラインをPlaying状態に設定");
                                 let _ = next.pipeline.set_state(gst::State::Playing);
 
@@ -448,9 +472,9 @@ pub fn audio_main(
             }
         }
 
-        // メインループの sleep を削除し、代わりに短い待機のみ
-        // イベント駆動型にすることで、レスポンス性を向上
-        std::thread::sleep(Duration::from_millis(1)); // 最小限の待機のみ
+        // ⚠️ 重要：sleepを完全に削除してCPU使用率を最小化しつつ、
+        // バスタイムアウト(10ms)で自然な待機を実現
+        // これによりGStreamerのイベント処理が滞らない
     }
 
     // 終了処理
