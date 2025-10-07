@@ -150,8 +150,8 @@ pub fn audio_main(
 
     let sound_setting = Arc::new(Mutex::new(SoundSetting {
         id: "default".to_string(),
-        max_volume_rssi: -40.0,
-        min_volume_rssi: -90.0,
+        max_volume_rssi: 0.0,  // 未使用（音量制御には使わない）
+        min_volume_rssi: 0.0,  // 未使用（音量制御には使わない）
         max_volume: 1.0,
         min_volume: 0.0,
         is_muted: false,
@@ -286,16 +286,26 @@ pub fn audio_main(
                 }
 
                 // ベストデバイス選定
+                // RSSI閾値: この値を超えたデバイスのみが候補になる
+                const RSSI_THRESHOLD: i16 = -70;
+
                 let best_device = {
                     let sound_map = sound_map.lock().unwrap();
                     let my_addr_opt_clone = my_address.lock().unwrap().clone();
                     let points = *current_points.lock().unwrap();
-                    let mut candidates: Vec<_> = detected_devices.values().filter(|d| sound_map.contains_key(&d.address)).collect();
+
+                    // RSSI閾値を超えたデバイスのみをフィルタリング
+                    let mut candidates: Vec<_> = detected_devices.values()
+                        .filter(|d| sound_map.contains_key(&d.address) && d.rssi > RSSI_THRESHOLD)
+                        .collect();
+
+                    // ポイント優先、同じポイントならRSSI優先でソート
                     candidates.sort_by(|a, b| {
                         let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
                         let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
                         b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
                     });
+
                     candidates.first().cloned()
                 };
 
