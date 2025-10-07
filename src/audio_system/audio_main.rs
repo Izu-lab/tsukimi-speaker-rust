@@ -34,15 +34,11 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let sink = sink_name();
     let desc = format!(
         concat!(
-            "interaudiosrc channel=a blocksize=8192 ! audioconvert ! audioresample ! ",
-            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
+            "interaudiosrc channel=a blocksize=8192 ! ",
             "volume name=volA ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
-            "interaudiosrc channel=b blocksize=8192 ! audioconvert ! audioresample ! ",
-            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
+            "interaudiosrc channel=b blocksize=8192 ! ",
             "volume name=volB ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! mix. ",
-            "audiomixer name=mix start-time-selection=first latency=200000000 ! ",
-            "audioconvert ! audioresample ! ",
-            "capsfilter caps=\"audio/x-raw,format=S16LE,rate=44100,channels=2\" ! ",
+            "audiomixer name=mix start-time-selection=first ! ",
             "queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! ",
             "{} buffer-time=200000 latency-time=20000"
         ),
@@ -53,32 +49,25 @@ fn build_mixer_pipeline() -> Result<MixerState> {
     let vol_a = pipeline.by_name("volA").ok_or_else(|| anyhow!("volA missing"))?;
     let vol_b = pipeline.by_name("volB").ok_or_else(|| anyhow!("volB missing"))?;
 
-    // audiomixerの設定を最適化
-    if let Some(mixer) = pipeline.by_name("mix") {
-        // バッファリングを安定させる
-        mixer.set_property("output-buffer-duration", 200_000_000u64); // 200ms
-    }
-
     Ok(MixerState { pipeline, bus, vol_a, vol_b })
 }
 
 fn build_decoder_pipeline(sound_path: &str, channel: &str) -> Result<DecoderState> {
-    // pitch はテンポ補正用（存在しない環境ではオプション）
+    // CPU負荷削減：pitchは無効化し、シンプルなパイプラインに
     let desc = format!(
         concat!(
-            "filesrc location={} blocksize=8192 ! decodebin ! audioconvert ! audioresample ! ",
-            "capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! ",
-            "pitch name=pch{} ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 ! ",
-            "interaudiosink channel={} blocksize=8192"
+            "filesrc location={} blocksize=16384 ! decodebin ! audioconvert ! ",
+            "audio/x-raw,format=F32LE,rate=44100,channels=2 ! ",
+            "queue max-size-buffers=0 max-size-bytes=0 max-size-time=100000000 ! ",
+            "interaudiosink channel={} blocksize=16384"
         ),
         sound_path,
-        channel,
         channel,
     );
     let pipeline = gst::parse::launch(&desc)?.downcast::<gst::Pipeline>().map_err(|_| anyhow!("Downcast decoder pipeline failed"))?;
     let bus = pipeline.bus().ok_or_else(|| anyhow!("decoder bus missing"))?;
-    let pitch = pipeline.by_name(&format!("pch{}", channel));
-    Ok(DecoderState { pipeline, bus, pitch })
+    // pitchは使用しない（CPU負荷削減）
+    Ok(DecoderState { pipeline, bus, pitch: None })
 }
 
 fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duration, label: &str) -> bool {
