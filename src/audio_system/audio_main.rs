@@ -176,19 +176,28 @@ pub fn audio_main(
 
                     if diff_abs_s > 1.0 {
                         warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected, seeking.");
-                        let duration = pipeline.query_duration::<gst::ClockTime>().unwrap();
-                        let seek_time_ns = server_time_ns % duration.nseconds();
-                        let seek_time = gst::ClockTime::from_nseconds(seek_time_ns);
-                        pipeline.seek_simple(gst::SeekFlags::FLUSH, seek_time)?;
 
-                        if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
-                            info!("Seek completed.");
-                            // seek完了後、時間の基準点をリセット
-                            playback_start_time = Instant::now();
-                            initial_server_time_ns = server_time_ns;
-                            new_rate = 1.0;
+                        // durationを安全に取得
+                        if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
+                            if duration.nseconds() > 0 {
+                                let seek_time_ns = server_time_ns % duration.nseconds();
+                                let seek_time = gst::ClockTime::from_nseconds(seek_time_ns);
+                                pipeline.seek_simple(gst::SeekFlags::FLUSH, seek_time)?;
+
+                                if let Some(_) = bus.timed_pop_filtered(Some(gst::ClockTime::from_seconds(5)), &[gst::MessageType::AsyncDone]) {
+                                    info!("Seek completed.");
+                                    // seek完了後、時間の基準点をリセット
+                                    playback_start_time = Instant::now();
+                                    initial_server_time_ns = server_time_ns;
+                                    new_rate = 1.0;
+                                } else {
+                                    error!("Seek confirmation not received. Sync might be unstable.");
+                                }
+                            } else {
+                                warn!("Duration is 0, skipping seek.");
+                            }
                         } else {
-                            error!("Seek confirmation not received. Sync might be unstable.");
+                            warn!("Could not query duration, skipping seek.");
                         }
                     } else {
                         // 比例制御で再生レートを調整
@@ -269,14 +278,15 @@ pub fn audio_main(
                         if current_sound.as_deref() != Some(new_sound.as_str()) {
                             info!("Switching sound to {}", new_sound);
                             pipeline.set_state(gst::State::Null)?;
-                            pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
+                            let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                             filesrc.set_property("location", new_sound.clone());
-                            pipeline.set_state(gst::State::Paused)?;
-                            pipeline.state(gst::ClockTime::from_seconds(5)); // Paused状態への遷移を待つ
+                            pipeline.set_state(gst::State::Playing)?;
+                            let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
                             current_sound = Some(new_sound.clone());
-                            // サウンド切り替え後は再同期が必要
-                            playback_state = PlaybackState::WaitingForFirstSync;
-                            info!("Sound switched. Waiting for next time sync to resume playback.");
+                            // 時間の基準点をリセット
+                            playback_start_time = Instant::now();
+                            initial_server_time_ns = 0;
+                            info!("Sound switched to {}. Continuing playback.", new_sound);
                         }
                     }
                 } else {
@@ -284,14 +294,15 @@ pub fn audio_main(
                     if current_sound.as_deref() != Some(default_sound) {
                         info!("No device detected. Playing default sound: {}", default_sound);
                         pipeline.set_state(gst::State::Null)?;
-                        pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
+                        let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Null状態への遷移を待つ
                         filesrc.set_property("location", default_sound);
-                        pipeline.set_state(gst::State::Paused)?;
-                        pipeline.state(gst::ClockTime::from_seconds(5)); // Paused状態への遷移を待つ
+                        pipeline.set_state(gst::State::Playing)?;
+                        let _ = pipeline.state(gst::ClockTime::from_seconds(5)); // Playing状態への遷移を待つ
                         current_sound = Some(default_sound.to_string());
-                        // サウンド切り替え後は再同期が必要
-                        playback_state = PlaybackState::WaitingForFirstSync;
-                        info!("Switched to default sound. Waiting for next time sync to resume playback.");
+                        // 時間の基準点をリセット
+                        playback_start_time = Instant::now();
+                        initial_server_time_ns = 0;
+                        info!("Switched to default sound. Continuing playback.");
                     }
                 }
 
