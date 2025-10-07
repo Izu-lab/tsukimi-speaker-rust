@@ -48,12 +48,12 @@ pub fn audio_main(
     const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
     let pipeline_str = "filesrc name=src location=tsukimi-main.mp3 ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! pulsesink";
-    let pipeline = gst::parse::launch(pipeline_str)?;
-    let pipeline = pipeline.downcast::<gst::Pipeline>().unwrap();
+    let mut pipeline = gst::parse::launch(pipeline_str)?;
+    let mut pipeline = pipeline.downcast::<gst::Pipeline>().unwrap();
 
-    let filesrc = pipeline.by_name("src").unwrap();
+    let mut filesrc = pipeline.by_name("src").unwrap();
     let volume = pipeline.by_name("vol").unwrap();
-    let pitch = pipeline.by_name("pch").unwrap();
+    let mut pitch = pipeline.by_name("pch").unwrap();
 
     // --- 同期関連の変数 ---
     let mut current_rate = 1.0f64;
@@ -68,7 +68,7 @@ pub fn audio_main(
     pipeline.state(gst::ClockTime::from_seconds(10)); // 状態変更を待つ
     info!("Pipeline is Paused. Waiting for first time sync...");
 
-    let bus = pipeline.bus().unwrap();
+    let mut bus = pipeline.bus().unwrap();
 
     // 時刻同期待機のタイムアウト
     let sync_wait_start = Instant::now();
@@ -306,7 +306,7 @@ pub fn audio_main(
                         if current_sound.as_deref() != Some(new_sound.as_str()) {
                             info!("Switching sound to {}", new_sound);
 
-                            // ファイルの存在確認（パスがある場合）
+                            // ファイルの存在確認
                             if !new_sound.is_empty() {
                                 let sound_path = std::path::Path::new(new_sound);
                                 if !sound_path.exists() {
@@ -319,77 +319,70 @@ pub fn audio_main(
                                 continue;
                             }
 
-                            // パイプラインを停止
+                            // 古いパイプラインを停止して破棄
+                            info!("Stopping current pipeline...");
                             if let Err(e) = pipeline.set_state(gst::State::Null) {
                                 error!("Failed to set pipeline to Null state: {}", e);
-                                continue;
                             }
+                            let _ = pipeline.state(gst::ClockTime::from_seconds(2));
+                            drop(pipeline);
+                            drop(bus);
+                            info!("Old pipeline destroyed");
 
-                            // Null状態への遷移を待つ
-                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
-                                (Ok(gst::StateChangeSuccess::Success), _, _) => {
-                                    info!("Pipeline successfully transitioned to Null state");
-                                }
-                                (Ok(state), _, _) => {
-                                    warn!("Pipeline state change result: {:?}", state);
-                                }
-                                (Err(e), _, _) => {
-                                    error!("Failed to wait for Null state: {}", e);
-                                    continue;
-                                }
-                            }
+                            // 新しいパイプラインを作成
+                            info!("Creating new pipeline with file: {}", new_sound);
+                            let pipeline_str = format!(
+                                "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! pulsesink",
+                                new_sound
+                            );
 
-                            // ファイルパスを変更
-                            filesrc.set_property("location", new_sound.clone());
-                            info!("Set new location: {}", new_sound);
-
-                            // Ready状態を経由してからPlayingに遷移
-                            if let Err(e) = pipeline.set_state(gst::State::Ready) {
-                                error!("Failed to set pipeline to Ready state: {}", e);
-                                continue;
-                            }
-                            info!("Set pipeline to Ready state, waiting...");
-
-                            // Ready状態への遷移を待つ
-                            match pipeline.state(gst::ClockTime::from_seconds(5)) {
-                                (Ok(gst::StateChangeSuccess::Success), gst::State::Ready, _) => {
-                                    info!("Pipeline successfully transitioned to Ready state");
+                            let new_pipeline = match gst::parse::launch(&pipeline_str) {
+                                Ok(p) => p.downcast::<gst::Pipeline>().unwrap(),
+                                Err(e) => {
+                                    error!("Failed to create new pipeline: {}", e);
+                                    // フォールバック: 元のファイルでパイプラインを再作成
+                                    let fallback_sound = current_sound.as_deref().unwrap_or("tsukimi-main.mp3");
+                                    let fallback_str = format!(
+                                        "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue ! pulsesink",
+                                        fallback_sound
+                                    );
+                                    gst::parse::launch(&fallback_str).unwrap().downcast::<gst::Pipeline>().unwrap()
                                 }
-                                (Ok(state), current, _) => {
-                                    warn!("Pipeline Ready state result: {:?}, current: {:?}", state, current);
-                                }
-                                (Err(e), _, _) => {
-                                    error!("Failed to wait for Ready state: {}", e);
-                                    continue;
-                                }
-                            }
+                            };
 
-                            // Pausedを経由
+                            pipeline = new_pipeline;
+                            bus = pipeline.bus().unwrap();
+                            filesrc = pipeline.by_name("src").unwrap();
+                            pitch = pipeline.by_name("pch").unwrap();
+
+                            info!("New pipeline created, setting to Paused state...");
+
+                            // Pausedに設定
                             if let Err(e) = pipeline.set_state(gst::State::Paused) {
-                                error!("Failed to set pipeline to Paused state: {}", e);
+                                error!("Failed to set new pipeline to Paused: {}", e);
                                 continue;
                             }
-                            info!("Set pipeline to Paused state, waiting...");
 
-                            // Paused状態への遷移を待つ（AsyncDoneまで待機）
-                            let paused_timeout = Instant::now();
+                            // Paused状態への遷移を待つ
+                            let paused_start = Instant::now();
                             let mut paused_ok = false;
                             loop {
-                                if Instant::now().duration_since(paused_timeout) > std::time::Duration::from_secs(10) {
-                                    error!("Timeout waiting for Paused state");
+                                let elapsed = Instant::now().duration_since(paused_start);
+                                if elapsed > std::time::Duration::from_secs(10) {
+                                    error!("Timeout waiting for Paused state after {:?}", elapsed);
                                     break;
                                 }
 
-                                // busメッセージをチェック（AsyncDoneを待つ）
+                                // busメッセージをチェック
                                 while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
                                     use gst::MessageView;
                                     match msg.view() {
                                         MessageView::AsyncDone(_) => {
-                                            info!("AsyncDone received for Paused state");
+                                            info!("AsyncDone received for new pipeline Paused state");
                                         }
                                         MessageView::Error(err) => {
                                             error!(
-                                                "GStreamer error during Paused transition: {}, Debug: {:?}",
+                                                "GStreamer error from new pipeline: {}, Debug: {:?}",
                                                 err.error(),
                                                 err.debug()
                                             );
@@ -398,7 +391,7 @@ pub fn audio_main(
                                         MessageView::StateChanged(sc) => {
                                             if sc.src().map(|s| s == &pipeline).unwrap_or(false) {
                                                 info!(
-                                                    "Pipeline state changed during Paused wait: {:?} -> {:?}",
+                                                    "New pipeline state: {:?} -> {:?}",
                                                     sc.old(),
                                                     sc.current()
                                                 );
@@ -408,19 +401,18 @@ pub fn audio_main(
                                     }
                                 }
 
-                                // 現在の状態を確認
                                 let (ret, current, pending) = pipeline.state(gst::ClockTime::ZERO);
                                 match (ret, current, pending) {
                                     (Ok(_), gst::State::Paused, gst::State::VoidPending) => {
-                                        info!("Pipeline successfully reached Paused state");
+                                        info!("New pipeline reached Paused state in {:?}", elapsed);
                                         paused_ok = true;
                                         break;
                                     }
                                     (Ok(_), curr, pend) => {
-                                        debug!("Waiting for Paused: current={:?}, pending={:?}", curr, pend);
+                                        debug!("New pipeline state: current={:?}, pending={:?}, elapsed={:?}", curr, pend, elapsed);
                                     }
                                     (Err(e), curr, _) => {
-                                        error!("Error waiting for Paused state: {}, current={:?}", e, curr);
+                                        error!("Error checking new pipeline state: {}, current={:?}", e, curr);
                                         break;
                                     }
                                 }
@@ -429,23 +421,27 @@ pub fn audio_main(
                             }
 
                             if !paused_ok {
-                                error!("Failed to reach Paused state, skipping playback");
+                                error!("New pipeline failed to reach Paused state, skipping playback");
                                 continue;
                             }
 
-                            // 再生を開始
+                            // Playingに遷移
+                            info!("Setting new pipeline to Playing state...");
                             if let Err(e) = pipeline.set_state(gst::State::Playing) {
-                                error!("Failed to set pipeline to Playing state: {}", e);
+                                error!("Failed to set new pipeline to Playing: {}", e);
                                 continue;
                             }
-                            info!("Set pipeline state to Playing, waiting for transition...");
 
-                            // Playing状態への遷移を待つ（AsyncDoneメッセージを待つ）
-                            let state_change_timeout = Instant::now();
-                            let mut has_error = false;
+                            // Playing状態への遷移を待つ
+                            let playing_start = Instant::now();
                             let mut playing_ok = false;
                             loop {
-                                // busメッセージをチェック
+                                let elapsed = Instant::now().duration_since(playing_start);
+                                if elapsed > std::time::Duration::from_secs(10) {
+                                    error!("Timeout waiting for Playing state after {:?}", elapsed);
+                                    break;
+                                }
+
                                 while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(10)) {
                                     use gst::MessageView;
                                     match msg.view() {
@@ -453,62 +449,30 @@ pub fn audio_main(
                                             info!("AsyncDone received for Playing state");
                                         }
                                         MessageView::Error(err) => {
-                                            error!(
-                                                "GStreamer error during state change: {}, Debug: {:?}",
-                                                err.error(),
-                                                err.debug()
-                                            );
-                                            has_error = true;
+                                            error!("GStreamer error: {}, Debug: {:?}", err.error(), err.debug());
                                             break;
-                                        }
-                                        MessageView::Warning(warn) => {
-                                            warn!(
-                                                "GStreamer warning during state change: {}, Debug: {:?}",
-                                                warn.error(),
-                                                warn.debug()
-                                            );
                                         }
                                         MessageView::StateChanged(sc) => {
                                             if sc.src().map(|s| s == &pipeline).unwrap_or(false) {
-                                                info!(
-                                                    "Pipeline state changed: {:?} -> {:?}",
-                                                    sc.old(),
-                                                    sc.current()
-                                                );
+                                                info!("Pipeline state: {:?} -> {:?}", sc.old(), sc.current());
                                             }
                                         }
                                         _ => {}
                                     }
                                 }
 
-                                if has_error {
-                                    error!("Breaking due to GStreamer error");
-                                    break;
-                                }
-
-                                // 状態を確認
-                                let elapsed = Instant::now().duration_since(state_change_timeout);
                                 let (ret, current, pending) = pipeline.state(gst::ClockTime::ZERO);
                                 match (ret, current, pending) {
                                     (Ok(_), gst::State::Playing, gst::State::VoidPending) => {
-                                        info!("Pipeline successfully transitioned to Playing state (elapsed: {:?})", elapsed);
+                                        info!("New pipeline reached Playing state in {:?}", elapsed);
                                         playing_ok = true;
                                         break;
                                     }
                                     (Ok(_), curr, pend) => {
-                                        debug!(
-                                            "State transition in progress, current: {:?}, pending: {:?}, elapsed: {:?}",
-                                            curr,
-                                            pend,
-                                            elapsed
-                                        );
-                                        if elapsed > std::time::Duration::from_secs(10) {
-                                            error!("Timeout waiting for Playing state after {:?}", elapsed);
-                                            break;
-                                        }
+                                        debug!("Waiting for Playing: current={:?}, pending={:?}, elapsed={:?}", curr, pend, elapsed);
                                     }
                                     (Err(e), curr, _) => {
-                                        error!("Error waiting for Playing state: {}, current={:?}", e, curr);
+                                        error!("Error waiting for Playing: {}, current={:?}", e, curr);
                                         break;
                                     }
                                 }
@@ -517,18 +481,16 @@ pub fn audio_main(
                             }
 
                             if !playing_ok {
-                                error!("Failed to reach Playing state");
+                                warn!("Failed to reach Playing state, but continuing");
                             }
 
-                            // 最終的な状態を確認
                             let (_, final_state, _) = pipeline.state(gst::ClockTime::ZERO);
-                            info!("Final pipeline state after transition attempt: {:?}", final_state);
+                            info!("New pipeline final state: {:?}", final_state);
 
                             current_sound = Some(new_sound.clone());
-                            // 時間の基準点をリセット
                             playback_start_time = Instant::now();
                             initial_server_time_ns = 0;
-                            info!("Sound switched to {}. Continuing playback.", new_sound);
+                            info!("Successfully switched to sound: {}", new_sound);
                         }
                     }
                 } else {
