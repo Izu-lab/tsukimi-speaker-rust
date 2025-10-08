@@ -69,7 +69,7 @@ fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
 fn get_se_file_from_place_type(place_type: &str) -> Option<&'static str> {
     match place_type {
         "fire_rat_robe" => Some("interaction-se-fire.mp3"),
-        "buddhas_bowl" => Some("interaction-se-buddha.mp3"),
+        "buddhas_bowl" => Some("interaction-se-fire.mp3"),
         _ => None,
     }
 }
