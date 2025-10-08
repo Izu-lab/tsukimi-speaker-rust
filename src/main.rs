@@ -118,6 +118,9 @@ async fn main() -> Result<()> {
     // サウンド設定のためのmpscチャンネル
     let (sound_setting_tx, sound_setting_rx) = mpsc::channel::<SoundSetting>(32);
 
+    // SE再生のためのmpscチャンネル
+    let (se_tx, se_rx) = mpsc::channel::<audio_system::audio_main::SePlayRequest>(32);
+
     // gRPC通信を行うタスク
     info!("Spawning gRPC server task");
     let grpc_rx = bcast_tx.subscribe();
@@ -126,10 +129,11 @@ async fn main() -> Result<()> {
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
         let sound_setting_tx_clone = sound_setting_tx.clone();
+        let se_tx_clone = se_tx.clone();
         tokio::spawn(
             async move {
                 if let Err(e) =
-                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, sound_map_clone, my_address_clone, current_points_clone).await
+                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, se_tx_clone, sound_map_clone, my_address_clone, current_points_clone).await
                 {
                     error!("Connect server error: {}", e);
                 }
@@ -147,7 +151,7 @@ async fn main() -> Result<()> {
         let current_points_clone = Arc::clone(&current_points);
         tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!("audio_playback_task").entered();
-            audio_main(audio_rx, time_sync_rx, sound_setting_rx, sound_map_clone, my_address_clone, current_points_clone)
+            audio_main(audio_rx, time_sync_rx, sound_setting_rx, se_rx, sound_map_clone, my_address_clone, current_points_clone)
         })
     };
 

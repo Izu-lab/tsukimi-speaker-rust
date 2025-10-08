@@ -10,6 +10,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 
+// SE再生リクエスト
+#[derive(Debug, Clone)]
+pub struct SePlayRequest {
+    pub file_path: String,
+}
+
 // 音源切り替えリクエスト
 struct SwitchRequest {
     desired_sound: String,
@@ -108,11 +114,12 @@ fn set_volume(volume: &gst::Element, v: f64) {
     volume.set_property("volume", v);
 }
 
-#[instrument(skip(rx, time_sync_rx, sound_map))]
+#[instrument(skip(rx, time_sync_rx, sound_map, se_rx))]
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<u64>,
     mut sound_setting_rx: mpsc::Receiver<SoundSetting>,
+    mut se_rx: mpsc::Receiver<SePlayRequest>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
@@ -142,6 +149,9 @@ pub fn audio_main(
     // アクティブ/インアクティブの2系統を保持
     let mut active: Option<PipelineState> = None;
     let mut standby: Option<PipelineState> = None;
+
+    // SE再生用のパイプライン（独立して管理）
+    let mut se_pipeline: Option<gst::Pipeline> = None;
 
     // 音源切り替え用のチャネル
     let (switch_tx, mut switch_rx) = mpsc::channel::<PipelineState>(1);
@@ -207,6 +217,82 @@ pub fn audio_main(
 
         // 最新サーバー時間を吸い上げ
         while let Ok(t) = time_sync_rx.try_recv() { last_server_time_ns = Some(t); }
+
+        // SE再生リクエストの処理
+        if let Ok(se_request) = se_rx.try_recv() {
+            info!("🔔 SE再生リクエスト受信: file={}", se_request.file_path);
+
+            // 既存のSEパイプラインがあれば停止
+            if let Some(old_se) = se_pipeline.take() {
+                info!("🛑 既存のSEパイプラインを停止してクリーンアップ");
+                let _ = old_se.set_state(gst::State::Null);
+            }
+
+            // 新しいSEパイプラインを作成（シンプルなワンショット再生）
+            let sink = sink_name();
+            let se_pipeline_str = format!(
+                "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=1.0 ! {}",
+                se_request.file_path, sink
+            );
+
+            info!("🎵 SEパイプライン構築開始: pipeline={}", se_pipeline_str);
+
+            match gst::parse::launch(&se_pipeline_str) {
+                Ok(pipeline) => {
+                    if let Ok(se_pipe) = pipeline.downcast::<gst::Pipeline>() {
+                        info!("✅ SEパイプライン作成成功: file={}", se_request.file_path);
+                        info!("▶️  SE再生開始: {}", se_request.file_path);
+                        let _ = se_pipe.set_state(gst::State::Playing);
+                        se_pipeline = Some(se_pipe);
+                    } else {
+                        error!("❌ SEパイプラインのダウンキャストに失敗: file={}", se_request.file_path);
+                    }
+                }
+                Err(e) => {
+                    error!("❌ SEパイプラインの構築に失敗: file={}, error={}", se_request.file_path, e);
+                }
+            }
+        }
+
+        // SE再生の完了チェック（EOSメッセージを確認）
+        if let Some(ref se_pipe) = se_pipeline {
+            if let Some(bus) = se_pipe.bus() {
+                let mut should_clear = false;
+                while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(1)) {
+                    use gst::MessageView;
+                    match msg.view() {
+                        MessageView::Eos(_) => {
+                            info!("🎵 SE再生完了 (EOS受信) - パイプラインを終了します");
+                            should_clear = true;
+                        }
+                        MessageView::Error(err) => {
+                            error!("❌ SEパイプラインエラー: error={}, debug={:?}", err.error(), err.debug());
+                            should_clear = true;
+                        }
+                        MessageView::StateChanged(state_changed) => {
+                            if let Some(src) = state_changed.src() {
+                                if src == &se_pipe.clone().upcast::<gst::Object>() {
+                                    let old = state_changed.old();
+                                    let new = state_changed.current();
+                                    let pending = state_changed.pending();
+                                    info!("🔄 SEパイプライン状態変更: {:?} -> {:?} (pending: {:?})", old, new, pending);
+                                }
+                            }
+                        }
+                        MessageView::StreamStart(_) => {
+                            info!("🎬 SEストリーム開始");
+                        }
+                        _ => {}
+                    }
+                }
+                if should_clear {
+                    info!("🧹 SEパイプラインをクリーンアップして解放");
+                    if let Some(se_pipe) = se_pipeline.take() {
+                        let _ = se_pipe.set_state(gst::State::Null);
+                    }
+                }
+            }
+        }
 
         match playback_state {
             PlaybackState::WaitingForFirstSync => {
