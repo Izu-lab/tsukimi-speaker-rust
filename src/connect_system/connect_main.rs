@@ -159,7 +159,7 @@ async fn run_device_service_client(
     let location_place_types = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
     // RSSI閾値（この値以下になったらインタラクション発動）
-    const INTERACTION_RSSI_THRESHOLD: i16 = -25;
+    const INTERACTION_RSSI_THRESHOLD: i16 = -35;
 
     // デバイス情報を監視するためのRxクローン
     let mut interaction_rx = rx.resubscribe();
