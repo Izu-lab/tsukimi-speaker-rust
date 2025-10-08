@@ -222,6 +222,12 @@ pub fn audio_main(
         if let Ok(se_request) = se_rx.try_recv() {
             info!("🔔 SE再生リクエスト受信: file={}", se_request.file_path);
 
+            // メインBGMの音量を下げる（ダッキング効果）
+            if let Some(ref act) = active {
+                info!("🔉 メインBGMの音量を下げます（ダッキング）");
+                set_volume(&act.volume, 0.2); // 20%に下げる
+            }
+
             // 既存のSEパイプラインがあれば停止
             if let Some(old_se) = se_pipeline.take() {
                 info!("🛑 既存のSEパイプラインを停止してクリーンアップ");
@@ -231,7 +237,7 @@ pub fn audio_main(
             // 新しいSEパイプラインを作成（シンプルなワンショット再生）
             let sink = sink_name();
             let se_pipeline_str = format!(
-                "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=1.0 ! {}",
+                "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=2.0 ! {}",
                 se_request.file_path, sink
             );
 
@@ -289,6 +295,11 @@ pub fn audio_main(
                     info!("🧹 SEパイプラインをクリーンアップして解放");
                     if let Some(se_pipe) = se_pipeline.take() {
                         let _ = se_pipe.set_state(gst::State::Null);
+                    }
+                    // メインBGMの音量を元に戻す
+                    if let Some(ref act) = active {
+                        info!("🔊 メインBGMの音量を元に戻します");
+                        set_volume(&act.volume, 1.0);
                     }
                 }
             }
