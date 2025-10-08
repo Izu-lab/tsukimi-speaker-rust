@@ -236,10 +236,19 @@ pub fn audio_main(
 
             // 新しいSEパイプラインを作成（シンプルなワンショット再生）
             let sink = sink_name();
-            let se_pipeline_str = format!(
-                "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=2.0 ! {}",
-                se_request.file_path, sink
-            );
+
+            // PulseAudioの場合は明示的にストリーム名とclient名を設定
+            let se_pipeline_str = if cfg!(target_os = "linux") {
+                format!(
+                    "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=3.0 ! pulsesink client-name=\"tsukimi-se\" stream-properties=\"properties,media.role=event\"",
+                    se_request.file_path
+                )
+            } else {
+                format!(
+                    "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=3.0 ! {}",
+                    se_request.file_path, sink
+                )
+            };
 
             info!("🎵 SEパイプライン構築開始: pipeline={}", se_pipeline_str);
 
