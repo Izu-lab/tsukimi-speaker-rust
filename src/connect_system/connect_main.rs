@@ -158,7 +158,8 @@ async fn run_device_service_client(
     // ロケーション情報のキャッシュ（address -> place_type）
     let location_place_types = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
-    // RSSI閾値（この値以下になったらインタラクション発動）
+    // RSSI閾値（この値を上回ったらインタラクション発動）
+    // RSSIは0に近いほど距離が近い（例: -35より-30の方が近い）
     const INTERACTION_RSSI_THRESHOLD: i16 = -35;
 
     // デバイス情報を監視するためのRxクローン
@@ -180,12 +181,13 @@ async fn run_device_service_client(
                     let prev_rssi = last_rssi_map.get(&device_info.address).copied().unwrap_or(i16::MIN);
                     let current_rssi = device_info.rssi;
 
-                    // RSSI閾値を超えた場合（近づいた場合）
-                    if prev_rssi > INTERACTION_RSSI_THRESHOLD && current_rssi <= INTERACTION_RSSI_THRESHOLD {
+                    // RSSI閾値を上回った場合（0に近づいた = 近づいた場合）
+                    if prev_rssi <= INTERACTION_RSSI_THRESHOLD && current_rssi > INTERACTION_RSSI_THRESHOLD {
                         info!(
                             address = %device_info.address,
                             rssi = current_rssi,
-                            "Device came very close (RSSI <= -25), checking for interaction"
+                            threshold = INTERACTION_RSSI_THRESHOLD,
+                            "Device came very close (RSSI > {}), checking for interaction", INTERACTION_RSSI_THRESHOLD
                         );
 
                         // place_typeを取得
