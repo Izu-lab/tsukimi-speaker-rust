@@ -26,6 +26,13 @@ async fn main() -> Result<()> {
     // tracingを初期化
     tracing_subscriber::fmt::init();
 
+    // OSの判定をログに出力（コンパイル時）
+    #[cfg(target_os = "linux")]
+    info!("Application compiled for Linux");
+
+    #[cfg(not(target_os = "linux"))]
+    info!("Application compiled for non-Linux");
+
     info!("Spawning performance monitor task");
     tokio::spawn(
         async {

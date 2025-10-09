@@ -42,31 +42,83 @@ pub async fn bluetooth_scanner(
     #[cfg(target_os = "linux")]
     {
         info!("Running on Linux, attempting to get MAC address via zbus...");
-        let adapter_name = central.adapter_info().await?;
-        info!("Adapter name: {}", adapter_name);
+
+        let adapter_name = match central.adapter_info().await {
+            Ok(name) => {
+                info!("Adapter name: {}", name);
+                name
+            }
+            Err(e) => {
+                error!("Failed to get adapter info: {:?}", e);
+                return Err(e.into());
+            }
+        };
+
         let object_path_str = format!("/org/bluez/{}", adapter_name);
         info!("Object path: {}", object_path_str);
-        let object_path = OwnedObjectPath::try_from(object_path_str)?;
-        let connection = zbus::Connection::system().await?;
-        let proxy = Proxy::new(
+
+        let object_path = match OwnedObjectPath::try_from(object_path_str.clone()) {
+            Ok(path) => {
+                info!("Successfully created object path");
+                path
+            }
+            Err(e) => {
+                error!("Failed to create object path from '{}': {:?}", object_path_str, e);
+                return Err(anyhow!("Invalid object path: {}", object_path_str));
+            }
+        };
+
+        info!("Connecting to system D-Bus...");
+        let connection = match zbus::Connection::system().await {
+            Ok(conn) => {
+                info!("Successfully connected to system D-Bus");
+                conn
+            }
+            Err(e) => {
+                error!("Failed to connect to system D-Bus: {:?}", e);
+                return Err(anyhow!("D-Bus connection failed: {:?}", e));
+            }
+        };
+
+        info!("Creating proxy for bluez adapter...");
+        let proxy = match Proxy::new(
             &connection,
             "org.bluez",
             object_path,
             "org.bluez.Adapter1",
         )
-        .await?;
-        info!("Connected to bluez adapter via D-Bus");
-        let address_value: zbus::zvariant::Value = proxy.get_property("Address").await?;
-        info!("Raw address value from D-Bus: {:?}", address_value);
+        .await {
+            Ok(p) => {
+                info!("Successfully created proxy");
+                p
+            }
+            Err(e) => {
+                error!("Failed to create proxy: {:?}", e);
+                return Err(anyhow!("Proxy creation failed: {:?}", e));
+            }
+        };
+
+        info!("Getting Address property from D-Bus...");
+        let address_value: zbus::zvariant::Value = match proxy.get_property("Address").await {
+            Ok(val) => {
+                info!("Successfully got Address property: {:?}", val);
+                val
+            }
+            Err(e) => {
+                error!("Failed to get Address property: {:?}", e);
+                return Err(anyhow!("Failed to get Address property: {:?}", e));
+            }
+        };
 
         // zvariant::Valueから文字列を抽出
         my_mac_address_str = if let zbus::zvariant::Value::Str(s) = address_value {
-            s.to_string()
+            let mac = s.to_string();
+            info!("Parsed MAC address: {}", mac);
+            mac
         } else {
+            error!("Address property is not a string: {:?}", address_value);
             return Err(anyhow!("Address property is not a string: {:?}", address_value));
         };
-
-        info!("Parsed MAC address: {}", my_mac_address_str);
     }
 
     #[cfg(not(target_os = "linux"))]
