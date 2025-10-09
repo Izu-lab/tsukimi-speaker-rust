@@ -38,6 +38,7 @@ pub async fn bluetooth_scanner(
         let adapter_name = central.adapter_info().await?;
         info!("Adapter name: {}", adapter_name);
         let object_path_str = format!("/org/bluez/{}", adapter_name);
+        info!("Object path: {}", object_path_str);
         let object_path = OwnedObjectPath::try_from(object_path_str)?;
         let connection = zbus::Connection::system().await?;
         let proxy = Proxy::new(
@@ -47,9 +48,18 @@ pub async fn bluetooth_scanner(
             "org.bluez.Adapter1",
         )
         .await?;
+        info!("Connected to bluez adapter via D-Bus");
         let address_value: zbus::zvariant::Value = proxy.get_property("Address").await?;
-        my_mac_address_str = address_value.try_into()?;
-        info!("Retrieved MAC address: {}", my_mac_address_str);
+        info!("Raw address value from D-Bus: {:?}", address_value);
+
+        // zvariant::Valueから文字列を抽出
+        my_mac_address_str = if let zbus::zvariant::Value::Str(s) = address_value {
+            s.to_string()
+        } else {
+            return Err(anyhow!("Address property is not a string: {:?}", address_value));
+        };
+
+        info!("Parsed MAC address: {}", my_mac_address_str);
     }
 
     #[cfg(not(target_os = "linux"))]
