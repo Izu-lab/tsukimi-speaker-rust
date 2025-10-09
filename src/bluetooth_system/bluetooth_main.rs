@@ -32,6 +32,13 @@ pub async fn bluetooth_scanner(
     // 自身のBluetoothアドレスを取得
     let my_mac_address_str: String;
 
+    // OSの判定をログに出力
+    #[cfg(target_os = "linux")]
+    info!("Compiled for Linux target");
+
+    #[cfg(not(target_os = "linux"))]
+    info!("Compiled for non-Linux target");
+
     #[cfg(target_os = "linux")]
     {
         info!("Running on Linux, attempting to get MAC address via zbus...");
