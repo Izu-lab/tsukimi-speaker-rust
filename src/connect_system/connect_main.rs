@@ -120,26 +120,6 @@ async fn send_interaction_request(user_id: String, place_type: String) -> anyhow
     Ok(())
 }
 
-/// SE再生タスク
-async fn play_se(se_file: &str) -> anyhow::Result<()> {
-    info!(se_file, "Playing interaction SE");
-
-    #[cfg(target_os = "macos")]
-    {
-        let _ = tokio::process::Command::new("afplay")
-            .arg(se_file)
-            .spawn();
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let _ = tokio::process::Command::new("aplay")
-            .arg(se_file)
-            .spawn();
-    }
-
-    Ok(())
-}
 
 #[instrument(skip(client, rx, sound_map, se_tx))]
 async fn run_device_service_client(

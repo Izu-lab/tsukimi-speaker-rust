@@ -16,8 +16,10 @@ sudo apt-get install -y \
     pkg-config \
     libssl-dev \
     protobuf-compiler \
-    libasound2-dev \
+    bluez \
+    rfkill \
     libbluetooth-dev \
+    libasound2-dev \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
     gstreamer1.0-plugins-good \
@@ -28,8 +30,10 @@ sudo apt-get install -y \
 
 echo ""
 echo "--- 依存ライブラリのインストールが完了しました！ ---"
+
+# --- オーディオシステムのセットアップ ---
 echo ""
-echo "--- オーディオシステムの状態を確認します ---"
+echo "--- オーディオシステムの状態を確認・設定します ---"
 # PulseAudioがアクティブでない場合、起動を試みる
 if ! pactl info &>/dev/null; then
     echo "PulseAudioが起動していないようです。起動を試みます..."
@@ -38,9 +42,24 @@ if ! pactl info &>/dev/null; then
 else
     echo "PulseAudioは既に起動しています。"
 fi
-
-echo ""
 echo "利用可能なALSA出力デバイス:"
 aplay -l
+
+# --- Bluetoothのセットアップ ---
 echo ""
-echo "セットアップ完了後、'cargo build'でプロジェクトをビルドしてください。"
+echo "--- Bluetoothの状態を確認・設定します ---"
+
+echo "Bluetoothのブロックを解除します..."
+sudo rfkill unblock bluetooth
+
+echo "Bluetoothの電源をオンにします..."
+if ! bluetoothctl power on; then
+    echo "Bluetoothの電源オンに失敗しました。手動での確認が必要かもしれません。"
+else
+    echo "Bluetoothが有効になりました。"
+fi
+
+
+echo ""
+echo "--- すべてのセットアップ処理が完了しました！ ---"
+echo "次に、'cargo build'でプロジェクトをビルドしてください。"

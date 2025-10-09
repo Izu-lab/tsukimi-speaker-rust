@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
 
+#[cfg(target_os = "linux")]
+use zbus::{Proxy, zvariant::OwnedObjectPath};
+
 /// Bluetoothデバイスをスキャンする非同期関数
 #[instrument(skip(tx, my_address))]
 pub async fn bluetooth_scanner(
@@ -26,13 +29,38 @@ pub async fn bluetooth_scanner(
         .nth(0)
         .ok_or_else(|| anyhow!("Bluetooth adapter not found"))?;
 
-    let adapter_info = central.adapter_info().await?;
-    info!(?adapter_info, "Using Bluetooth adapter");
+    // 自身のBluetoothアドレスを取得
+    let my_mac_address_str: String;
+
+    #[cfg(target_os = "linux")]
+    {
+        info!("Running on Linux, attempting to get MAC address via zbus...");
+        let adapter_name = central.adapter_info().await?;
+        let object_path_str = format!("/org/bluez/{}", adapter_name);
+        let object_path = OwnedObjectPath::try_from(object_path_str)?;
+        let connection = zbus::Connection::system().await?;
+        let proxy = Proxy::new(
+            &connection,
+            "org.bluez",
+            object_path,
+            "org.bluez.Adapter1",
+        )
+        .await?;
+        my_mac_address_str = proxy.get_property("Address").await?;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        info!("Running on a non-Linux OS, using adapter_info() as ID.");
+        my_mac_address_str = central.adapter_info().await?;
+    }
+
+    info!(my_id = %my_mac_address_str, "Using adapter ID");
 
     // 自身のBluetoothアドレスを保存
     {
         let mut my_addr = my_address.lock().unwrap();
-        *my_addr = Some(adapter_info.clone());
+        *my_addr = Some(my_mac_address_str.clone());
         info!(my_addr = ?*my_addr, "My address updated");
     }
 
