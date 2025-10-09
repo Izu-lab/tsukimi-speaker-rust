@@ -54,7 +54,14 @@ pub async fn bluetooth_scanner(
             }
         };
 
-        let object_path_str = format!("/org/bluez/{}", adapter_name);
+        // adapter_nameから最初の単語（例: "hci0"）だけを抽出
+        // "hci0 (usb:v1D6Bp0246d0552)" -> "hci0"
+        let adapter_id = adapter_name.split_whitespace()
+            .next()
+            .unwrap_or(&adapter_name);
+        info!("Extracted adapter ID: {}", adapter_id);
+
+        let object_path_str = format!("/org/bluez/{}", adapter_id);
         info!("Object path: {}", object_path_str);
 
         let object_path = match OwnedObjectPath::try_from(object_path_str.clone()) {
