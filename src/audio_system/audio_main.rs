@@ -153,6 +153,9 @@ pub fn audio_main(
     // SE再生用のパイプライン（独立して管理）
     let mut se_pipeline: Option<gst::Pipeline> = None;
 
+    // SE再生中フラグ（音源切り替え時の音量管理に使用）
+    let mut is_se_playing = false;
+
     // 音源切り替え用のチャネル
     let (switch_tx, mut switch_rx) = mpsc::channel::<PipelineState>(1);
 
@@ -221,6 +224,9 @@ pub fn audio_main(
         // SE再生リクエストの処理
         if let Ok(se_request) = se_rx.try_recv() {
             info!("🔔 SE再生リクエスト受信: file={}", se_request.file_path);
+
+            // SE再生中フラグを立てる
+            is_se_playing = true;
 
             // メインBGMの音量を下げる（ダッキング効果）
             if let Some(ref act) = active {
@@ -305,6 +311,9 @@ pub fn audio_main(
                     if let Some(se_pipe) = se_pipeline.take() {
                         let _ = se_pipe.set_state(gst::State::Null);
                     }
+                    // SE再生中フラグをリセット
+                    is_se_playing = false;
+
                     // メインBGMの音量を元に戻す
                     if let Some(ref act) = active {
                         info!("🔊 メインBGMの音量を元に戻します");
@@ -495,6 +504,14 @@ pub fn audio_main(
 
                     // 新パイプラインをアクティブに
                     active = Some(new_pipeline);
+
+                    // SE再生中の場合は、新しいパイプラインの音量も下げる
+                    if is_se_playing {
+                        if let Some(ref act) = active {
+                            info!("🔉 SE再生中のため、新パイプラインの音量も下げます");
+                            set_volume(&act.volume, 0.2);
+                        }
+                    }
 
                     // durationキャッシュを更新
                     if let Some(ref act) = active {

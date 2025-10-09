@@ -16,8 +16,7 @@ use serde::{Deserialize, Serialize};
 // インタラクション用の構造体
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InteractionRequest {
-    user_id: String,
-    place_type: String,
+    location_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,14 +83,16 @@ fn is_interactive_place_type(place_type: &str) -> bool {
 async fn send_interaction_request(user_id: String, place_type: String) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let request = InteractionRequest {
-        user_id: user_id.clone(),
-        place_type: place_type.clone(),
+        location_type: place_type.clone(),
     };
 
-    info!(?request, "Sending interaction request");
+    // エンドポイントURLを構築: https://tsukimi.paon.dev/players/{user_id}/increment
+    let url = format!("https://tsukimi.paon.dev/players/{}/increment", user_id);
+
+    info!(?request, url = %url, "Sending interaction request");
 
     match client
-        .post("http://35.221.123.49:8080/api/interaction")
+        .post(&url)
         .json(&request)
         .timeout(Duration::from_secs(5))
         .send()
@@ -225,12 +226,13 @@ async fn run_device_service_client(
                                         }
                                     }
 
-                                    // インタラクションAPIを呼び出し（無効化）
-                                    // if let Some(user_id) = my_address_for_interaction.lock().unwrap().clone() {
-                                    //     if let Err(e) = send_interaction_request(user_id, place_type).await {
-                                    //         error!("Failed to send interaction request: {}", e);
-                                    //     }
-                                    // }
+                                    // インタラクションAPIを呼び出し
+                                    let user_id_opt = my_address_for_interaction.lock().unwrap().clone();
+                                    if let Some(user_id) = user_id_opt {
+                                        if let Err(e) = send_interaction_request(user_id, place_type).await {
+                                            error!("Failed to send interaction request: {}", e);
+                                        }
+                                    }
                                 } else {
                                     debug!(
                                         place_type = %place_type,
