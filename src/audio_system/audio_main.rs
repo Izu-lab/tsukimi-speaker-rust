@@ -144,7 +144,7 @@ pub fn audio_main(
 
     // 準備
     let mut playback_state = PlaybackState::WaitingForFirstSync;
-    let default_sound = "tsukimi-main.mp3".to_string();
+    let default_sound = "tsukimi-main_1.mp3".to_string();
     let mut current_sound: String = default_sound.clone();
     let mut detected_devices: HashMap<String, Arc<DeviceInfo>> = HashMap::new();
     let mut last_cleanup = Instant::now();
@@ -159,6 +159,9 @@ pub fn audio_main(
 
     // SE再生中フラグ（音源切り替え時の音量管理に使用）
     let mut is_se_playing = false;
+
+    // システム有効化時のSE再生フラグ
+    let mut should_play_activation_se = false;
 
     // 音源切り替え用のチャネル
     let (switch_tx, mut switch_rx) = mpsc::channel::<PipelineState>(1);
@@ -218,6 +221,9 @@ pub fn audio_main(
                 // システムが再有効化された場合
                 info!("✅ System re-enabled - resuming audio system");
                 playback_state = PlaybackState::WaitingForFirstSync;
+
+                // 有効化SEを再生するフラグを立てる
+                should_play_activation_se = true;
             }
         }
 
@@ -266,6 +272,58 @@ pub fn audio_main(
 
         // 最新サーバー時間を吸い上げ
         while let Ok(t) = time_sync_rx.try_recv() { last_server_time_ns = Some(t); }
+
+        // システム有効化時のSE再生処理
+        if should_play_activation_se && !is_se_playing {
+            info!("🎵 システム有効化SE再生開始");
+            should_play_activation_se = false;
+
+            // SE再生中フラグを立てる
+            is_se_playing = true;
+
+            // 既存のSEパイプラインがあれば停止
+            if let Some(old_se) = se_pipeline.take() {
+                info!("🛑 既存のSEパイプラインを停止してクリーンアップ");
+                let _ = old_se.set_state(gst::State::Null);
+            }
+
+            // 新しいSEパイプラインを作成（システム有効化SE）
+            let sink = sink_name();
+            let se_file = "se-activation.mp3"; // システム有効化音
+
+            // PulseAudioの場合は明示的にストリーム名とclient名を設定
+            let se_pipeline_str = if cfg!(target_os = "linux") {
+                format!(
+                    "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=3.0 ! pulsesink client-name=\"tsukimi-se\" stream-properties=\"properties,media.role=event\"",
+                    se_file
+                )
+            } else {
+                format!(
+                    "filesrc location={} ! decodebin ! audioconvert ! audioresample ! volume name=se_vol volume=3.0 ! {}",
+                    se_file, sink
+                )
+            };
+
+            info!("🎵 システム有効化SEパイプライン構築開始: pipeline={}", se_pipeline_str);
+
+            match gst::parse::launch(&se_pipeline_str) {
+                Ok(pipeline) => {
+                    if let Ok(se_pipe) = pipeline.downcast::<gst::Pipeline>() {
+                        info!("✅ システム有効化SEパイプライン作成成功");
+                        info!("▶️  システム有効化SE再生開始: {}", se_file);
+                        let _ = se_pipe.set_state(gst::State::Playing);
+                        se_pipeline = Some(se_pipe);
+                    } else {
+                        error!("❌ システム有効化SEパイプラインのダウンキャストに失敗");
+                        is_se_playing = false;
+                    }
+                }
+                Err(e) => {
+                    error!("❌ システム有効化SEパイプラインの構築に失敗: error={}", e);
+                    is_se_playing = false;
+                }
+            }
+        }
 
         // SE再生リクエストの処理
         if let Ok(se_request) = se_rx.try_recv() {
@@ -342,7 +400,7 @@ pub fn audio_main(
                             }
                         }
                         MessageView::StreamStart(_) => {
-                            info!("🎬 SEストリーム開始");
+                            info!("�� SEストリーム開始");
                         }
                         _ => {}
                     }
@@ -521,8 +579,10 @@ pub fn audio_main(
 
                 let desired_sound = if let Some(device) = best_device {
                     let sound_map = sound_map.lock().unwrap();
+                    // sound_mapには既にポイント付きファイル名が格納されている
                     sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone())
                 } else if all_below_threshold {
+                    // デフォルトサウンド（既に_1.mp3形式）
                     default_sound.clone()
                 } else {
                     current_sound.clone()

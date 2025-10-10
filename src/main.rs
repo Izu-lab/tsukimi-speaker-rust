@@ -78,10 +78,11 @@ async fn main() -> Result<()> {
     // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
     sound_map.insert(
         "00:11:22:33:44:55".to_string(),
-        "tsukimi-main.mp3".to_string(),  // sound.mp3が存在しない場合のためデフォルトファイルに変更
+        "tsukimi-main_1.mp3".to_string(),
     );
     let sound_map = Arc::new(Mutex::new(sound_map));
     let current_points = Arc::new(Mutex::new(0_i32));
+    let current_location_type = Arc::new(Mutex::new(String::from("main")));
     let my_address = Arc::new(Mutex::new(None::<String>));
 
     // Bluetoothスキャナからのデータを受け取るためのmpscチャンネル
@@ -181,13 +182,14 @@ async fn main() -> Result<()> {
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let current_location_type_clone = Arc::clone(&current_location_type);
         let sound_setting_tx_clone = sound_setting_tx.clone();
         let se_tx_clone = se_tx.clone();
         let system_enabled_tx_clone = system_enabled_tx.clone();
         tokio::spawn(
             async move {
                 if let Err(e) =
-                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone).await
+                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone, current_location_type_clone).await
                 {
                     error!("Connect server error: {}", e);
                 }

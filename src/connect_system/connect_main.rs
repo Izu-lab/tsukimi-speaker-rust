@@ -57,24 +57,39 @@ impl InteractionState {
     }
 }
 
-/// place_typeに基づいてサウンドファイル名を決定する
-fn get_sound_file_from_place_type(place_type: &str) -> &'static str {
+/// place_typeに基づいてベースロケーションタイプを決定する
+fn get_base_location_type_from_place_type(place_type: &str) -> &'static str {
     match place_type {
-        "projection_mapping" => "tsukimi-main.mp3",
-        "buddhas_bowl" => "tsukimi-hotoke.mp3",
-        "jeweled_branch" => "tsukimi-eda.mp3",
-        "fire_rat_robe" => "tsukimi-nezumi.mp3",
-        "dragons_jewel" => "tsukimi-ryu.mp3",
-        "swallows_cowry" => "tsukimi-kai.mp3",
-        _ => "tsukimi-main.mp3",
+        "projection_mapping" => "main",
+        "buddhas_bowl" => "hotoke",
+        "jeweled_branch" => "eda",
+        "fire_rat_robe" => "nezumi",
+        "dragons_jewel" => "ryu",
+        "swallows_cowry" => "kai",
+        _ => "main",
     }
+}
+
+/// place_typeとポイント数に基づいてサウンドファイル名を生成する
+fn get_sound_file_from_place_type_and_points(place_type: &str, points: i32) -> String {
+    let base_type = get_base_location_type_from_place_type(place_type);
+    // ポイント0の場合は1として扱う
+    let effective_points = if points == 0 { 1 } else { points };
+    format!("tsukimi-{}_{}.mp3", base_type, effective_points)
+}
+
+/// ポイント数とロケーションタイプに基づいてBGMファイル名を生成する
+fn get_sound_file_with_points(location_type: &str, points: i32) -> String {
+    // ポイント0の場合は1として扱う
+    let effective_points = if points == 0 { 1 } else { points };
+    format!("tsukimi-{}_{}.mp3", location_type, effective_points)
 }
 
 /// place_typeに基づいてSEファイル名を決定する
 fn get_se_file_from_place_type(place_type: &str) -> Option<&'static str> {
     match place_type {
-        "fire_rat_robe" => Some("interaction-se-fire.mp3"),
-        "buddhas_bowl" => Some("interaction-se-fire.mp3"),
+        "fire_rat_robe" => Some("se-nezumi.mp3"),   // 火鼠の裘: 鼠のSE
+        "buddhas_bowl" => Some("se-hotoke.mp3"),    // 仏の御石の鉢: 仏のSE
         _ => None,
     }
 }
@@ -137,6 +152,7 @@ async fn run_device_service_client(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
+    current_location_type: Arc<Mutex<String>>,
 ) {
     info!("Starting DeviceService client...");
 
@@ -297,13 +313,15 @@ async fn run_device_service_client(
                                 Event::LocationUpdate(location_update) => {
                                     info!(?location_update, "LocationUpdate received");
                                     let mut sound_map = sound_map.lock().unwrap();
-                                    info!(old_sound_map_size = sound_map.len(), "Before updating sound_map");
+                                    let points = *current_points.lock().unwrap();
+                                    info!(old_sound_map_size = sound_map.len(), current_points = points, "Before updating sound_map");
 
                                     // 差分更新：新しいロケーションをマップに格納
                                     let mut new_addresses = std::collections::HashSet::new();
                                     for loc in &location_update.locations {
                                         new_addresses.insert(loc.address.clone());
-                                        let sound_file = get_sound_file_from_place_type(&loc.place_type);
+                                        // ポイント数に応じたサウンドファイル名を生成
+                                        let sound_file = get_sound_file_from_place_type_and_points(&loc.place_type, points);
 
                                         // place_typeをキャッシュ（インタラクション検知用）
                                         {
@@ -314,18 +332,11 @@ async fn run_device_service_client(
                                         info!(
                                             address = %loc.address,
                                             place_type = %loc.place_type,
+                                            points = points,
                                             sound_file = %sound_file,
-                                            "Processing location entry"
+                                            "Processing location entry with points"
                                         );
-                                        if !sound_file.is_empty() {
-                                            sound_map.insert(loc.address.clone(), sound_file.to_string());
-                                        } else {
-                                            warn!(
-                                                address = %loc.address,
-                                                place_type = %loc.place_type,
-                                                "Skipping empty sound file for location"
-                                            );
-                                        }
+                                        sound_map.insert(loc.address.clone(), sound_file);
                                     }
 
                                     // 新しいリストに存在しないアドレスを削除
@@ -338,11 +349,20 @@ async fn run_device_service_client(
                                     }
 
                                     info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with differential update");
+
+                                    // current_location_type を更新
+                                    let mut current_location_type_guard = current_location_type.lock().unwrap();
+                                    if let Some(first_location) = location_update.locations.get(0) {
+                                        let base_type = get_base_location_type_from_place_type(&first_location.place_type);
+                                        current_location_type_guard.clear();
+                                        current_location_type_guard.push_str(base_type);
+                                        info!(place_type = %first_location.place_type, base_type = %base_type, "Updated current_location_type");
+                                    }
                                 }
                                 Event::PointUpdate(point_update) => {
                                     debug!(?point_update, "PointUpdate received");
 
-                                    // user_idの比較を先にして、MutexGuardをすぐに解放
+                                    // user_idの比較を先にして、MutexGuard��すぐに解放
                                     let is_my_address = {
                                         let my_address_guard = my_address.lock().unwrap();
                                         my_address_guard.as_ref().map(|addr| *addr == point_update.user_id).unwrap_or(false)
@@ -366,7 +386,7 @@ async fn run_device_service_client(
                                         if new_points > old_points {
                                             info!(points_gained = new_points - old_points, "Points increased! Playing sound effect");
                                             let se_request = crate::audio_system::audio_main::SePlayRequest {
-                                                file_path: "interaction-se-fire.mp3".to_string(),
+                                                file_path: "se-point.mp3".to_string(), // ポイント獲得音
                                             };
                                             if let Err(e) = se_tx.send(se_request).await {
                                                 error!("Failed to send SE play request for point gain: {}", e);
@@ -471,6 +491,7 @@ pub async fn connect_main(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
+    current_location_type: Arc<Mutex<String>>,
 ) -> anyhow::Result<()> {
     let server_addr = "http://35.221.123.49:50051";
     info!("Connecting to gRPC server at {}", server_addr);
@@ -507,6 +528,7 @@ pub async fn connect_main(
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let current_location_type_clone = Arc::clone(&current_location_type);
         let sound_setting_tx_clone = sound_setting_tx.clone();
         let se_tx_clone = se_tx.clone();
         let system_enabled_tx_clone = system_enabled_tx.clone();
@@ -519,6 +541,7 @@ pub async fn connect_main(
             sound_map_clone,
             my_address_clone,
             current_points_clone,
+            current_location_type_clone,
         ))
     };
     let time_service_handle = tokio::spawn(run_time_service_client(time_client, time_sync_tx));

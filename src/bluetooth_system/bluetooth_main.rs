@@ -158,15 +158,6 @@ pub async fn bluetooth_scanner(
         info!(my_addr = ?*my_addr, "My address updated");
     }
 
-    // sound_mapのスナップショットを作成（検索対象デバイスのアドレスセット）
-    // これによりロック競合を削減し、高速な検索が可能
-    let target_addresses: Arc<std::collections::HashSet<String>> = {
-        let sound_map = sound_map.lock().unwrap();
-        let addresses: std::collections::HashSet<String> = sound_map.keys().cloned().collect();
-        info!(count = addresses.len(), addresses = ?addresses, "Target BLE addresses loaded");
-        Arc::new(addresses)
-    };
-
     // デバイスキャッシュを作成（頻繁な送信を抑制しつつ、重要な更新は通知）
     let device_cache: Arc<Mutex<HashMap<String, DeviceCache>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -204,7 +195,7 @@ pub async fn bluetooth_scanner(
         if let btleplug::api::CentralEvent::DeviceDiscovered(id)
         | btleplug::api::CentralEvent::DeviceUpdated(id) = event
         {
-            on_event_receive(&central, &id, tx.clone(), Arc::clone(&target_addresses), Arc::clone(&device_cache)).await;
+            on_event_receive(&central, &id, tx.clone(), Arc::clone(&sound_map), Arc::clone(&device_cache)).await;
         }
     }
     Ok(())
@@ -245,12 +236,12 @@ async fn optimize_linux_scan_parameters(_proxy: &()) -> Result<()> {
 }
 
 /// Bluetoothイベント受信時の処理
-#[instrument(skip(central, sender, target_addresses, device_cache))]
+#[instrument(skip(central, sender, device_cache))]
 async fn on_event_receive(
     central: &Adapter,
     id: &PeripheralId,
     sender: mpsc::Sender<Arc<DeviceInfo>>,
-    target_addresses: Arc<std::collections::HashSet<String>>,
+    sound_map: Arc<Mutex<HashMap<String, String>>>,
     device_cache: Arc<Mutex<HashMap<String, DeviceCache>>>,
 ) {
     // 最初にアドレスを取得（軽量な操作）
@@ -259,7 +250,7 @@ async fn on_event_receive(
 
         // 早期リターン: sound_mapに含まれないデバイスは即座にスキップ
         // プロパティ取得前にフィルタリングすることでパフォーマンス向上
-        if !target_addresses.contains(&address) {
+        if !sound_map.lock().unwrap().contains_key(&address) {
             return;
         }
 
