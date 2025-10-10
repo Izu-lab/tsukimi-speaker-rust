@@ -8,8 +8,32 @@ echo "========================================="
 echo "Tsukimi Speaker systemd自動起動設定"
 echo "========================================="
 
+# ユーザー名を自動検出
+if [ -n "$SUDO_USER" ]; then
+    CURRENT_USER="$SUDO_USER"
+elif [ -n "$USER" ] && [ "$USER" != "root" ]; then
+    CURRENT_USER="$USER"
+else
+    # /home ディレクトリから実際のユーザーを検出
+    if [ -d "/home/pi" ]; then
+        CURRENT_USER="pi"
+    elif [ -d "/home/tsukimi" ]; then
+        CURRENT_USER="tsukimi"
+    else
+        CURRENT_USER=$(ls /home | head -n 1)
+    fi
+fi
+
+echo "検出されたユーザー: ${CURRENT_USER}"
+
 # スクリプトのパスを設定
-SETUP_SCRIPT="/home/tsukimi/tsukimi-speaker-rust/setup_and_run.sh"
+SETUP_SCRIPT="/home/${CURRENT_USER}/tsukimi-speaker-rust/setup_and_run.sh"
+
+# setup_and_run.sh の存在確認
+if [ ! -f "$SETUP_SCRIPT" ]; then
+    echo "エラー: ${SETUP_SCRIPT} が見つかりません"
+    exit 1
+fi
 
 # setup_and_run.sh に実行権限を付与
 echo "Step 1: setup_and_run.sh に実行権限を付与..."
@@ -31,6 +55,7 @@ ExecStart=$SETUP_SCRIPT
 StandardOutput=journal
 StandardError=journal
 User=root
+Environment="SUDO_USER=${CURRENT_USER}"
 
 [Install]
 WantedBy=multi-user.target
@@ -59,4 +84,3 @@ echo ""
 echo "今すぐテストする場合は、以下を実行してください："
 echo "  sudo systemctl start tsukimi-setup.service"
 echo ""
-
