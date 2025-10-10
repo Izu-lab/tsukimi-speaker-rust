@@ -274,11 +274,6 @@ pub fn audio_main(
             // SE再生中フラグを立てる
             is_se_playing = true;
 
-            // メインBGMの音量を下げる（ダッキング効果）
-            if let Some(ref act) = active {
-                info!("🔉 メインBGMの音量を下げます（ダッキング）");
-                set_volume(&act.volume, 0.2); // 20%に下げる
-            }
 
             // 既存のSEパイプラインがあれば停止
             if let Some(old_se) = se_pipeline.take() {
@@ -359,12 +354,6 @@ pub fn audio_main(
                     }
                     // SE再生中フラグをリセット
                     is_se_playing = false;
-
-                    // メインBGMの音量を元に戻す
-                    if let Some(ref act) = active {
-                        info!("🔊 メインBGMの音量を元に戻します");
-                        set_volume(&act.volume, 1.0);
-                    }
                 }
             }
         }
@@ -551,13 +540,6 @@ pub fn audio_main(
                     // 新パイプラインをアクティブに
                     active = Some(new_pipeline);
 
-                    // SE再生中の場合は、新しいパイプラインの音量も下げる
-                    if is_se_playing {
-                        if let Some(ref act) = active {
-                            info!("🔉 SE再生中のため、新パイプラインの音量も下げます");
-                            set_volume(&act.volume, 0.2);
-                        }
-                    }
 
                     // durationキャッシュを更新
                     if let Some(ref act) = active {
