@@ -11,7 +11,16 @@ use tokio::sync::mpsc;
 use tokio::time;
 
 #[cfg(target_os = "linux")]
+use tracing::warn;
+
+#[cfg(target_os = "linux")]
 use zbus::{Proxy, zvariant::OwnedObjectPath};
+
+// デバイス情報のキャッシュ構造体
+struct DeviceCache {
+    last_sent: Instant,
+    last_rssi: i16,
+}
 
 /// Bluetoothデバイスをスキャンする非同期関数
 #[instrument(skip(tx, my_address))]
@@ -126,6 +135,12 @@ pub async fn bluetooth_scanner(
             error!("Address property is not a string: {:?}", address_value);
             return Err(anyhow!("Address property is not a string: {:?}", address_value));
         };
+
+        // Linux固有: スキャンパラメータの最適化を試みる
+        info!("Attempting to optimize BLE scan parameters for Linux...");
+        if let Err(e) = optimize_linux_scan_parameters(&proxy).await {
+            warn!("Failed to optimize scan parameters (continuing anyway): {:?}", e);
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -143,53 +158,156 @@ pub async fn bluetooth_scanner(
         info!(my_addr = ?*my_addr, "My address updated");
     }
 
+    // sound_mapのスナップショットを作成（検索対象デバイスのアドレスセット）
+    // これによりロック競合を削減し、高速な検索が可能
+    let target_addresses: Arc<std::collections::HashSet<String>> = {
+        let sound_map = sound_map.lock().unwrap();
+        let addresses: std::collections::HashSet<String> = sound_map.keys().cloned().collect();
+        info!(count = addresses.len(), addresses = ?addresses, "Target BLE addresses loaded");
+        Arc::new(addresses)
+    };
+
+    // デバイスキャッシュを作成（頻繁な送信を抑制しつつ、重要な更新は通知）
+    let device_cache: Arc<Mutex<HashMap<String, DeviceCache>>> = Arc::new(Mutex::new(HashMap::new()));
+
     let mut events = central.events().await?;
     info!("Scanning for BLE devices...");
-    if let Err(e) = central.start_scan(ScanFilter::default()).await {
+
+    // スキャンフィルタの設定（空のフィルタで全デバイスをスキャン）
+    let scan_filter = ScanFilter::default();
+
+    if let Err(e) = central.start_scan(scan_filter).await {
         error!("Failed to start scan: {:?}", e);
         return Err(e.into());
     }
+
     time::sleep(Duration::from_secs(2)).await;
 
     info!("Started listening for BLE events.");
+
+    // 定期的にキャッシュをクリーンアップするタスク
+    let cache_clone = Arc::clone(&device_cache);
+    tokio::spawn(async move {
+        loop {
+            time::sleep(Duration::from_secs(30)).await;
+            let mut cache = cache_clone.lock().unwrap();
+            let before = cache.len();
+            cache.retain(|_, v| v.last_sent.elapsed() < Duration::from_secs(60));
+            let after = cache.len();
+            if before != after {
+                debug!("Cache cleanup: {} -> {} entries", before, after);
+            }
+        }
+    });
+
     while let Some(event) = events.next().await {
         if let btleplug::api::CentralEvent::DeviceDiscovered(id)
         | btleplug::api::CentralEvent::DeviceUpdated(id) = event
         {
-            on_event_receive(&central, &id, tx.clone(), Arc::clone(&sound_map)).await;
+            on_event_receive(&central, &id, tx.clone(), Arc::clone(&target_addresses), Arc::clone(&device_cache)).await;
         }
     }
     Ok(())
 }
 
+/// Linux固有: BlueZ経由でスキャンパラメータを最適化
+#[cfg(target_os = "linux")]
+async fn optimize_linux_scan_parameters(proxy: &Proxy<'_>) -> Result<()> {
+    use zbus::zvariant::{Dict, Value, Type};
+    use std::collections::HashMap;
+
+    // スキャンパラメータの設定
+    // - DuplicateData: 重複データを報告（true推奨 - 同じデバイスの更新を受け取る）
+    // - Transport: BLE専用スキャン
+
+    // HashMapを使用してフィルタを構築
+    let mut filter_map = HashMap::new();
+    filter_map.insert("DuplicateData", Value::Bool(true));
+    filter_map.insert("Transport", Value::Str("le".into()));
+
+    info!("Setting discovery filter with DuplicateData=true...");
+
+    match proxy.call_method("SetDiscoveryFilter", &(filter_map,)).await {
+        Ok(_) => {
+            info!("Successfully set optimized discovery filter");
+            Ok(())
+        }
+        Err(e) => {
+            warn!("Failed to set discovery filter: {:?}", e);
+            Err(anyhow!("SetDiscoveryFilter failed: {:?}", e))
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn optimize_linux_scan_parameters(_proxy: &()) -> Result<()> {
+    Ok(())
+}
+
 /// Bluetoothイベント受信時の処理
-#[instrument(skip(central, sender, sound_map))]
+#[instrument(skip(central, sender, target_addresses, device_cache))]
 async fn on_event_receive(
     central: &Adapter,
     id: &PeripheralId,
     sender: mpsc::Sender<Arc<DeviceInfo>>,
-    sound_map: Arc<Mutex<HashMap<String, String>>>,
+    target_addresses: Arc<std::collections::HashSet<String>>,
+    device_cache: Arc<Mutex<HashMap<String, DeviceCache>>>,
 ) {
+    // 最初にアドレスを取得（軽量な操作）
     if let Ok(p) = central.peripheral(&id).await {
+        let address = p.address().to_string();
+
+        // 早期リターン: sound_mapに含まれないデバイスは即座にスキップ
+        // プロパティ取得前にフィルタリングすることでパフォーマンス向上
+        if !target_addresses.contains(&address) {
+            return;
+        }
+
+        // ターゲットデバイスのみプロパティを取得
         if let Ok(Some(props)) = p.properties().await {
             if let Some(rssi) = props.rssi {
-                let address = p.address().to_string();
-                let should_log;
-                {
-                    let sound_map = sound_map.lock().unwrap();
-                    should_log = sound_map.contains_key(&address);
-                }
+                // キャッシュをチェックして、送信すべきかを判定
+                let should_send = {
+                    let mut cache = device_cache.lock().unwrap();
 
-                if should_log {
+                    if let Some(cached) = cache.get_mut(&address) {
+                        let elapsed = cached.last_sent.elapsed();
+                        let rssi_diff = (rssi - cached.last_rssi).abs();
+
+                        // 以下の条件のいずれかを満たす場合に送信:
+                        // 1. 100ms以上経過している
+                        // 2. RSSIが3dBm以上変化している
+                        let should_send = elapsed >= Duration::from_millis(100) || rssi_diff >= 3;
+
+                        if should_send {
+                            cached.last_sent = Instant::now();
+                            cached.last_rssi = rssi;
+                        }
+
+                        should_send
+                    } else {
+                        // 新しいデバイス - 必ず送信
+                        cache.insert(address.clone(), DeviceCache {
+                            last_sent: Instant::now(),
+                            last_rssi: rssi,
+                        });
+                        true
+                    }
+                };
+
+                if should_send {
                     let device_info = Arc::new(DeviceInfo {
-                        address,
+                        address: address.clone(),
                         rssi,
                         last_seen: Instant::now(),
                     });
-                    debug!(device = ?device_info, "Device found");
+                    debug!(device = ?device_info, "Device found - sending update");
                     if let Err(e) = sender.send(device_info).await {
                         error!("Failed to send device info through channel: {}", e);
                     }
+                } else {
+                    // 送信をスキップしたことをトレース（詳細ログ）
+                    debug!(address = %address, rssi = %rssi, "Skipping send (too soon or RSSI unchanged)");
                 }
             }
         }

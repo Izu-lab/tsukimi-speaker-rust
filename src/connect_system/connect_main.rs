@@ -13,6 +13,12 @@ use tonic::transport::{Channel, Endpoint};
 use tracing::{debug, error, info, instrument, warn};
 use serde::{Deserialize, Serialize};
 
+// システム有効化状態を管理するメッセージ
+#[derive(Debug, Clone)]
+pub struct SystemEnabledState {
+    pub enabled: bool,
+}
+
 // インタラクション用の構造体
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InteractionRequest {
@@ -121,12 +127,13 @@ async fn send_interaction_request(user_id: String, place_type: String) -> anyhow
 }
 
 
-#[instrument(skip(client, rx, sound_map, se_tx))]
+#[instrument(skip(client, rx, sound_map, se_tx, system_enabled_tx))]
 async fn run_device_service_client(
     mut client: DeviceServiceClient<Channel>,
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
     sound_setting_tx: mpsc::Sender<SoundSetting>,
     se_tx: mpsc::Sender<crate::audio_system::audio_main::SePlayRequest>,
+    system_enabled_tx: broadcast::Sender<SystemEnabledState>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
@@ -334,19 +341,44 @@ async fn run_device_service_client(
                                 }
                                 Event::PointUpdate(point_update) => {
                                     debug!(?point_update, "PointUpdate received");
-                                    let my_address_guard = my_address.lock().unwrap();
-                                    if let Some(my_addr) = my_address_guard.as_ref() {
-                                        if *my_addr == point_update.user_id {
+
+                                    // user_idの比較を先にして、MutexGuardをすぐに解放
+                                    let is_my_address = {
+                                        let my_address_guard = my_address.lock().unwrap();
+                                        my_address_guard.as_ref().map(|addr| *addr == point_update.user_id).unwrap_or(false)
+                                    };
+
+                                    if is_my_address {
+                                        let old_points = {
+                                            let points = current_points.lock().unwrap();
+                                            *points
+                                        };
+
+                                        {
                                             let mut points = current_points.lock().unwrap();
                                             *points = point_update.points;
-                                            info!(user_id = %point_update.user_id, points = *points, "Updated my points");
-                                        } else {
-                                            debug!(
-                                                my_addr,
-                                                received_user_id = %point_update.user_id,
-                                                "Received points for another user, ignoring."
-                                            );
                                         }
+
+                                        let new_points = point_update.points;
+                                        info!(user_id = %point_update.user_id, points = new_points, old_points = old_points, "Updated my points");
+
+                                        // ポイントが増えた場合に音を再生
+                                        if new_points > old_points {
+                                            info!(points_gained = new_points - old_points, "Points increased! Playing sound effect");
+                                            let se_request = crate::audio_system::audio_main::SePlayRequest {
+                                                file_path: "interaction-se-fire.mp3".to_string(),
+                                            };
+                                            if let Err(e) = se_tx.send(se_request).await {
+                                                error!("Failed to send SE play request for point gain: {}", e);
+                                            } else {
+                                                info!("Point gain SE play request sent successfully");
+                                            }
+                                        }
+                                    } else {
+                                        debug!(
+                                            received_user_id = %point_update.user_id,
+                                            "Received points for another user, ignoring."
+                                        );
                                     }
                                 }
                                 Event::SoundSettingUpdate(sound_setting_update) => {
@@ -354,6 +386,36 @@ async fn run_device_service_client(
                                     if let Some(settings) = sound_setting_update.settings {
                                         if let Err(e) = sound_setting_tx.send(settings).await {
                                             error!("Failed to send sound settings: {}", e);
+                                        }
+                                    }
+                                }
+                                Event::MoonlightUpdate(moonlight_update) => {
+                                    info!(?moonlight_update, "MoonlightUpdate received");
+
+                                    // 自分のデバイスのenabledフラグを確認
+                                    let my_device_id = my_address.lock().unwrap().clone();
+                                    if let Some(device_id) = my_device_id {
+                                        // moonlightsリストから自分のデバイスを探す
+                                        for moonlight in &moonlight_update.moonlights {
+                                            if moonlight.device == device_id || moonlight.address == device_id {
+                                                info!(
+                                                    device = %moonlight.device,
+                                                    address = %moonlight.address,
+                                                    enabled = moonlight.enabled,
+                                                    "Found my device in MoonlightUpdate"
+                                                );
+
+                                                let state = SystemEnabledState {
+                                                    enabled: moonlight.enabled,
+                                                };
+
+                                                if let Err(e) = system_enabled_tx.send(state) {
+                                                    error!("Failed to send system enabled state: {}", e);
+                                                } else {
+                                                    info!(enabled = moonlight.enabled, "System enabled state sent successfully");
+                                                }
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -399,12 +461,13 @@ async fn run_time_service_client(
     }
 }
 
-#[instrument(skip(rx, time_sync_tx, sound_map, se_tx))]
+#[instrument(skip(rx, time_sync_tx, sound_map, se_tx, system_enabled_tx))]
 pub async fn connect_main(
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
     time_sync_tx: mpsc::Sender<u64>,
     sound_setting_tx: mpsc::Sender<SoundSetting>,
     se_tx: mpsc::Sender<crate::audio_system::audio_main::SePlayRequest>,
+    system_enabled_tx: broadcast::Sender<SystemEnabledState>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
@@ -446,11 +509,13 @@ pub async fn connect_main(
         let current_points_clone = Arc::clone(&current_points);
         let sound_setting_tx_clone = sound_setting_tx.clone();
         let se_tx_clone = se_tx.clone();
+        let system_enabled_tx_clone = system_enabled_tx.clone();
         tokio::spawn(run_device_service_client(
             device_client,
             rx,
             sound_setting_tx_clone,
             se_tx_clone,
+            system_enabled_tx_clone,
             sound_map_clone,
             my_address_clone,
             current_points_clone,

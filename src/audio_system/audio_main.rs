@@ -114,12 +114,13 @@ fn set_volume(volume: &gst::Element, v: f64) {
     volume.set_property("volume", v);
 }
 
-#[instrument(skip(rx, time_sync_rx, sound_map, se_rx))]
+#[instrument(skip(rx, time_sync_rx, sound_map, se_rx, system_enabled_rx))]
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
     mut time_sync_rx: mpsc::Receiver<u64>,
     mut sound_setting_rx: mpsc::Receiver<SoundSetting>,
     mut se_rx: mpsc::Receiver<SePlayRequest>,
+    mut system_enabled_rx: broadcast::Receiver<crate::connect_system::connect_main::SystemEnabledState>,
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
@@ -134,6 +135,9 @@ pub fn audio_main(
         min_volume: 0.0,
         is_muted: false,
     }));
+
+    // システム有効化状態を追跡
+    let mut system_enabled = true;
 
     gst::init()?;
     info!("GStreamer initialized successfully.");
@@ -181,6 +185,48 @@ pub fn audio_main(
     const DURATION_QUERY_INTERVAL: Duration = Duration::from_secs(1);
 
     'main_loop: loop {
+        // システム有効化状態のチェック
+        if let Ok(state) = system_enabled_rx.try_recv() {
+            info!(enabled = state.enabled, "System enabled state changed");
+            system_enabled = state.enabled;
+
+            if !system_enabled {
+                // システムが無効化された場合、すべてのパイプラインを停止
+                info!("🛑 System disabled - stopping all audio pipelines");
+
+                if let Some(act) = active.take() {
+                    let _ = act.pipeline.set_state(gst::State::Null);
+                    info!("Stopped active pipeline");
+                }
+
+                if let Some(st) = standby.take() {
+                    let _ = st.pipeline.set_state(gst::State::Null);
+                    info!("Stopped standby pipeline");
+                }
+
+                if let Some(se) = se_pipeline.take() {
+                    let _ = se.set_state(gst::State::Null);
+                    info!("Stopped SE pipeline");
+                }
+
+                is_se_playing = false;
+
+                // 再生状態を初期化に戻す
+                playback_state = PlaybackState::WaitingForFirstSync;
+                info!("Audio system paused, waiting for system to be re-enabled");
+            } else {
+                // システムが再有効化された場合
+                info!("✅ System re-enabled - resuming audio system");
+                playback_state = PlaybackState::WaitingForFirstSync;
+            }
+        }
+
+        // システムが無効化されている場合はスキップ
+        if !system_enabled {
+            std::thread::sleep(Duration::from_millis(100));
+            continue;
+        }
+
         // バス処理（アクティブ優先、スタンバイも確認）- タイムアウトを適切に調整
         if let Some(ref act) = active {
             // 10msに変更：メッセージ処理の余裕を持たせる
@@ -596,7 +642,7 @@ pub fn audio_main(
                                             MessageView::Buffering(buffering_msg) => {
                                                 let percent = buffering_msg.percent();
                                                 if percent != last_percent && (percent % 25 == 0 || percent >= 100) {
-                                                    info!("📊 バッファリング進行: {}%", percent);
+                                                    info!("��� バッファリング進行: {}%", percent);
                                                     last_percent = percent;
                                                 }
                                                 if percent >= 100 {

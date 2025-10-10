@@ -17,27 +17,6 @@ pub struct StreamDeviceInfoRequest {
     #[prost(message, repeated, tag = "2")]
     pub locations: ::prost::alloc::vec::Vec<LocationRssi>,
 }
-/// サーバーからストリーミングされるメッセージ
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StreamDeviceInfoResponse {
-    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3, 4")]
-    pub event: ::core::option::Option<stream_device_info_response::Event>,
-}
-/// Nested message and enum types in `StreamDeviceInfoResponse`.
-pub mod stream_device_info_response {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Event {
-        #[prost(message, tag = "1")]
-        TimeUpdate(super::TimeUpdate),
-        #[prost(message, tag = "2")]
-        LocationUpdate(super::LocationUpdate),
-        #[prost(message, tag = "3")]
-        PointUpdate(super::PointUpdate),
-        /// \<--- 追加
-        #[prost(message, tag = "4")]
-        SoundSettingUpdate(super::SoundSettingUpdate),
-    }
-}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TimeUpdate {
     #[prost(int64, tag = "1")]
@@ -70,7 +49,7 @@ pub struct PointUpdate {
     #[prost(int32, tag = "2")]
     pub points: i32,
 }
-/// サウンド設定メッセージ (--- 追加 ---)
+/// サウンド設定メッセージ
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SoundSetting {
     #[prost(string, tag = "1")]
@@ -86,11 +65,53 @@ pub struct SoundSetting {
     #[prost(bool, tag = "6")]
     pub is_muted: bool,
 }
-/// サウンド設定更新イベント (--- 追加 ---)
+/// サウンド設定更新イベント
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SoundSettingUpdate {
     #[prost(message, optional, tag = "1")]
     pub settings: ::core::option::Option<SoundSetting>,
+}
+/// Moonlight状態情報
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MoonlightInfo {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub device: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub enabled: bool,
+}
+/// Moonlight更新イベント（Webから変更された時にクライアントへ通知）
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoonlightUpdate {
+    /// 全Moonlightのリスト
+    #[prost(message, repeated, tag = "1")]
+    pub moonlights: ::prost::alloc::vec::Vec<MoonlightInfo>,
+}
+/// サーバーからストリーミングされるメッセージ
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamDeviceInfoResponse {
+    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3, 4, 5")]
+    pub event: ::core::option::Option<stream_device_info_response::Event>,
+}
+/// Nested message and enum types in `StreamDeviceInfoResponse`.
+pub mod stream_device_info_response {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Event {
+        #[prost(message, tag = "1")]
+        TimeUpdate(super::TimeUpdate),
+        #[prost(message, tag = "2")]
+        LocationUpdate(super::LocationUpdate),
+        #[prost(message, tag = "3")]
+        PointUpdate(super::PointUpdate),
+        #[prost(message, tag = "4")]
+        SoundSettingUpdate(super::SoundSettingUpdate),
+        /// Moonlight更新イベント
+        #[prost(message, tag = "5")]
+        MoonlightUpdate(super::MoonlightUpdate),
+    }
 }
 /// Generated client implementations.
 pub mod device_service_client {
@@ -103,7 +124,6 @@ pub mod device_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// デバイス情報サービス
     #[derive(Debug, Clone)]
     pub struct DeviceServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -184,7 +204,7 @@ pub mod device_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// ID/RSSIのストリームを受信し、時刻のストリームを返す双方向ストリーミング
+        /// 双方向ストリーミング（各種更新をリアルタイムで受信）
         pub async fn stream_device_info(
             &mut self,
             request: impl tonic::IntoStreamingRequest<
@@ -235,7 +255,7 @@ pub mod device_service_server {
             >
             + std::marker::Send
             + 'static;
-        /// ID/RSSIのストリームを受信し、時刻のストリームを返す双方向ストリーミング
+        /// 双方向ストリーミング（各種更新をリアルタイムで受信）
         async fn stream_device_info(
             &self,
             request: tonic::Request<tonic::Streaming<super::StreamDeviceInfoRequest>>,
@@ -244,7 +264,6 @@ pub mod device_service_server {
             tonic::Status,
         >;
     }
-    /// デバイス情報サービス
     #[derive(Debug)]
     pub struct DeviceServiceServer<T> {
         inner: Arc<T>,
