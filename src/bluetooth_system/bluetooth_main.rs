@@ -210,13 +210,17 @@ async fn optimize_linux_scan_parameters(proxy: &Proxy<'_>) -> Result<()> {
     // スキャンパラメータの設定
     // - DuplicateData: 重複データを報告（true推奨 - 同じデバイスの更新を受け取る）
     // - Transport: BLE専用スキャン
+    // - RSSI: RSSIフィルタリングを無効化（-127で全て受信）
+    // - Pathloss: パスロスフィルタリングを無効化
 
     // HashMapを使用してフィルタを構築
     let mut filter_map = HashMap::new();
     filter_map.insert("DuplicateData", Value::Bool(true));
     filter_map.insert("Transport", Value::Str("le".into()));
+    // RSSIフィルタを最小値に設定（全てのビーコンを受信）
+    filter_map.insert("RSSI", Value::I16(-127));
 
-    info!("Setting discovery filter with DuplicateData=true...");
+    info!("Setting discovery filter with optimized parameters for Wi-Fi coexistence...");
 
     match proxy.call_method("SetDiscoveryFilter", &(filter_map,)).await {
         Ok(_) => {
@@ -266,9 +270,9 @@ async fn on_event_receive(
                         let rssi_diff = (rssi - cached.last_rssi).abs();
 
                         // 以下の条件のいずれかを満たす場合に送信:
-                        // 1. 100ms以上経過している
-                        // 2. RSSIが3dBm以上変化している
-                        let should_send = elapsed >= Duration::from_millis(100) || rssi_diff >= 3;
+                        // 1. 25ms以上経過している（50ms→25msに短縮でさらに高速化）
+                        // 2. RSSIが1dBm以上変化している
+                        let should_send = elapsed >= Duration::from_millis(25) || rssi_diff >= 1;
 
                         if should_send {
                             cached.last_sent = Instant::now();

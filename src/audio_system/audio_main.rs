@@ -43,28 +43,72 @@ fn sink_name() -> &'static str {
 }
 
 fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
+    // ファイルの存在確認
+    if !std::path::Path::new(sound_path).exists() {
+        return Err(anyhow!("Audio file not found: {}", sound_path));
+    }
+
     let sink = sink_name();
     let pipeline_str = format!(
         "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 use-buffering=true ! {}",
         sound_path,
         sink
     );
+
+    debug!("Building pipeline: {}", pipeline_str);
+
     let pipeline = gst::parse::launch(&pipeline_str)?
         .downcast::<gst::Pipeline>()
         .map_err(|_| anyhow!("Failed to downcast to Pipeline"))?;
     let bus = pipeline.bus().ok_or_else(|| anyhow!("Failed to get bus from pipeline"))?;
     let volume = pipeline.by_name("vol").ok_or_else(|| anyhow!("volume not found"))?;
     let pitch = pipeline.by_name("pch");
+
+    // バスからエラーメッセージをチェック
+    if let Some(msg) = bus.timed_pop_filtered(gst::ClockTime::ZERO, &[gst::MessageType::Error]) {
+        if let gst::MessageView::Error(err) = msg.view() {
+            return Err(anyhow!("Pipeline error: {} (debug: {:?})", err.error(), err.debug()));
+        }
+    }
+
     Ok(PipelineState { pipeline, bus, pitch, volume })
 }
 
 fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duration, label: &str) -> bool {
     let start = Instant::now();
+    let bus = pipeline.bus();
+
     loop {
         if Instant::now().duration_since(start) > timeout {
             error!(?target, label, "Timeout waiting for state");
+
+            // バスからエラーメッセージを確認
+            if let Some(bus) = &bus {
+                while let Some(msg) = bus.pop_filtered(&[gst::MessageType::Error, gst::MessageType::Warning]) {
+                    match msg.view() {
+                        gst::MessageView::Error(err) => {
+                            error!("Pipeline error: {} (debug: {:?})", err.error(), err.debug());
+                        }
+                        gst::MessageView::Warning(warn) => {
+                            warn!("Pipeline warning: {} (debug: {:?})", warn.error(), warn.debug());
+                        }
+                        _ => {}
+                    }
+                }
+            }
             return false;
         }
+
+        // バスからエラーメッセージをチェック
+        if let Some(bus) = &bus {
+            if let Some(msg) = bus.timed_pop_filtered(gst::ClockTime::ZERO, &[gst::MessageType::Error]) {
+                if let gst::MessageView::Error(err) = msg.view() {
+                    error!("Pipeline error during state change: {} (debug: {:?})", err.error(), err.debug());
+                    return false;
+                }
+            }
+        }
+
         let (ret, current, pending) = pipeline.state(gst::ClockTime::from_mseconds(0));
         match (ret, current, pending) {
             (Ok(_), c, gst::State::VoidPending) if c == target => {
@@ -76,6 +120,21 @@ fn wait_for_state(pipeline: &gst::Pipeline, target: gst::State, timeout: Duratio
             }
             (Err(e), c, p) => {
                 error!(?e, ?c, ?p, label, "Error while waiting for state");
+
+                // バスからエラーメッセージを確認
+                if let Some(bus) = &bus {
+                    while let Some(msg) = bus.pop_filtered(&[gst::MessageType::Error, gst::MessageType::Warning]) {
+                        match msg.view() {
+                            gst::MessageView::Error(err) => {
+                                error!("Pipeline error: {} (debug: {:?})", err.error(), err.debug());
+                            }
+                            gst::MessageView::Warning(warn) => {
+                                warn!("Pipeline warning: {} (debug: {:?})", warn.error(), warn.debug());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 return false;
             }
         }
@@ -580,9 +639,17 @@ pub fn audio_main(
                 let desired_sound = if let Some(device) = best_device {
                     let sound_map = sound_map.lock().unwrap();
                     // sound_mapには既にポイント付きファイル名が格納されている
-                    sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone())
+                    let sound = sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone());
+                    info!(
+                        device_address = %device.address,
+                        device_rssi = device.rssi,
+                        selected_sound = %sound,
+                        "🎵 デバイスに基づいて音源を選択"
+                    );
+                    sound
                 } else if all_below_threshold {
                     // デフォルトサウンド（既に_1.mp3形式）
+                    info!(selected_sound = %default_sound, "🎵 全デバイスが閾値以下、デフォルト音源を選択");
                     default_sound.clone()
                 } else {
                     current_sound.clone()
@@ -623,7 +690,13 @@ pub fn audio_main(
 
                 // 音源切り替えリクエスト処理
                 if desired_sound != current_sound && !switching {
-                    info!(from=%current_sound, to=%desired_sound, "🔄 音源切り替えリクエスト送信");
+                    let current_points = current_points.lock().unwrap();
+                    info!(
+                        from = %current_sound,
+                        to = %desired_sound,
+                        current_points = *current_points,
+                        "🔄 音源切り替えリクエスト送信 (ポイント情報付き)"
+                    );
                     switching = true;
                     current_sound = desired_sound.clone();
 

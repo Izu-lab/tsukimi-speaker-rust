@@ -41,7 +41,7 @@ impl InteractionState {
     fn new() -> Self {
         Self {
             last_interaction_time: HashMap::new(),
-            interaction_cooldown: Duration::from_secs(10), // 10秒間のクールダウン
+            interaction_cooldown: Duration::from_secs(10), // 5秒→10秒に戻す
         }
     }
 
@@ -100,7 +100,6 @@ fn is_interactive_place_type(place_type: &str) -> bool {
 }
 
 /// インタラクションAPIを呼び出す
-#[allow(dead_code)]
 async fn send_interaction_request(user_id: String, place_type: String) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let request = InteractionRequest {
@@ -164,7 +163,8 @@ async fn run_device_service_client(
 
     // RSSI閾値（この値を上回ったらインタラクション発動）
     // RSSIは0に近いほど距離が近い（例: -35より-30の方が近い）
-    const INTERACTION_RSSI_THRESHOLD: i16 = -35;
+    // -35 → -45に変更して、より遠い距離でも反応するようにする
+    const INTERACTION_RSSI_THRESHOLD: i16 = -45;
 
     // デバイス情報を監視するためのRxクローン
     let mut interaction_rx = rx.resubscribe();
@@ -181,6 +181,21 @@ async fn run_device_service_client(
         loop {
             match interaction_rx.recv().await {
                 Ok(device_info) => {
+                    // 自分自身のデバイス情報かチェック
+                    let is_my_device = {
+                        let my_addr = my_address_for_interaction.lock().unwrap();
+                        my_addr.as_ref().map(|addr| *addr == device_info.address).unwrap_or(false)
+                    };
+
+                    // 自分自身のデバイスでない場合はスキップ
+                    if !is_my_device {
+                        debug!(
+                            address = %device_info.address,
+                            "Received device info for another device, skipping interaction check"
+                        );
+                        continue;
+                    }
+
                     // 前回のRSSIを取得
                     let prev_rssi = last_rssi_map.get(&device_info.address).copied().unwrap_or(i16::MIN);
                     let current_rssi = device_info.rssi;
@@ -191,7 +206,7 @@ async fn run_device_service_client(
                             address = %device_info.address,
                             rssi = current_rssi,
                             threshold = INTERACTION_RSSI_THRESHOLD,
-                            "Device came very close (RSSI > {}), checking for interaction", INTERACTION_RSSI_THRESHOLD
+                            "I came very close to a location (RSSI > {}), checking for interaction", INTERACTION_RSSI_THRESHOLD
                         );
 
                         // place_typeを取得
@@ -416,6 +431,7 @@ async fn run_device_service_client(
                                     let my_device_id = my_address.lock().unwrap().clone();
                                     if let Some(device_id) = my_device_id {
                                         // moonlightsリストから自分のデバイスを探す
+                                        let mut found = false;
                                         for moonlight in &moonlight_update.moonlights {
                                             if moonlight.device == device_id || moonlight.address == device_id {
                                                 info!(
@@ -434,9 +450,20 @@ async fn run_device_service_client(
                                                 } else {
                                                     info!(enabled = moonlight.enabled, "System enabled state sent successfully");
                                                 }
+                                                found = true;
                                                 break;
                                             }
                                         }
+
+                                        if !found {
+                                            warn!(
+                                                my_device_id = %device_id,
+                                                moonlights_count = moonlight_update.moonlights.len(),
+                                                "My device not found in MoonlightUpdate - ignoring update"
+                                            );
+                                        }
+                                    } else {
+                                        warn!("Received MoonlightUpdate but my device ID is not yet set - ignoring update");
                                     }
                                 }
                             }
