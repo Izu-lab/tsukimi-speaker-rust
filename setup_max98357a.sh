@@ -8,25 +8,25 @@ set -e
 
 echo "--- MAX98357A I2S DACのセットアップを開始します ---"
 
-# --- /boot/config.txt のバックアップと編集 ---
-echo "--- /boot/config.txt を設定しています... ---"
+# --- /boot/firmware/config.txt のバックアップと編集 ---
+echo "--- /boot/firmware/config.txt を設定しています... ---"
 
 # 念のためバックアップを作成
-sudo cp /boot/config.txt /boot/config.txt.bak
-echo "/boot/config.txt を /boot/config.txt.bak にバックアップしました。"
+sudo cp /boot/firmware/config.txt /boot/firmware/config.txt.bak
+echo "/boot/firmware/config.txt を /boot/firmware/config.txt.bak にバックアップしました。"
 
 # デフォルトのオンボードオーディオを無効化
-sudo sed -i -e 's/^dtparam=audio=on/#dtparam=audio=on/g' /boot/config.txt
+sudo sed -i -e 's/^dtparam=audio=on/#dtparam=audio=on/g' /boot/firmware/config.txt
 echo "デフォルトオーディオ(dtparam=audio=on)を無効化しました。"
 
 # I2SとDACのオーバーレイを有効化（既にあれば追記しない）
-if ! grep -q "^dtparam=i2s=on$" /boot/config.txt; then
-    echo "dtparam=i2s=on" | sudo tee -a /boot/config.txt
+if ! grep -q "^dtparam=i2s=on$" /boot/firmware/config.txt; then
+    echo "dtparam=i2s=on" | sudo tee -a /boot/firmware/config.txt
     echo "I2S(dtparam=i2s=on)を有効化しました。"
 fi
 
-if ! grep -q "^dtoverlay=hifiberry-dac$" /boot/config.txt; then
-    echo "dtoverlay=hifiberry-dac" | sudo tee -a /boot/config.txt
+if ! grep -q "^dtoverlay=hifiberry-dac$" /boot/firmware/config.txt; then
+    echo "dtoverlay=hifiberry-dac" | sudo tee -a /boot/firmware/config.txt
     echo "DACオーバーレイ(dtoverlay=hifiberry-dac)を有効化しました。"
 fi
 
