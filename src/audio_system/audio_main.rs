@@ -49,8 +49,10 @@ fn build_pipeline(sound_path: &str) -> Result<PipelineState> {
     }
 
     let sink = sink_name();
+    // pitchプラグインの前にqueueを追加して、十分なバッファサイズを確保
+    // これによりSoundTouchライブラリのFIRFilterのアサーションエラーを回避
     let pipeline_str = format!(
-        "filesrc name=src location={} ! decodebin ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! pitch name=pch ! audioconvert ! audioresample ! queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 use-buffering=true ! {}",
+        "filesrc name=src location={} ! decodebin ! audioconvert ! audioresample ! volume name=vol ! audioconvert ! capsfilter caps=\"audio/x-raw,format=F32LE,rate=44100,channels=2\" ! queue max-size-buffers=100 max-size-time=1000000000 ! pitch name=pch ! audioconvert ! audioresample ! queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 use-buffering=true ! {}",
         sound_path,
         sink
     );
@@ -659,12 +661,18 @@ pub fn audio_main(
                 if let Ok(new_pipeline) = switch_rx.try_recv() {
                     info!("✅ 非同期切り替え完了、新パイプラインを適用");
 
-                    // 旧パイプラインを停止
+                    // 🔥 重要：旧パイプラインを先に停止してから新パイプラインを開始
                     if let Some(old) = active.take() {
+                        info!("🛑 旧パイプラインを停止中...");
                         let _ = old.pipeline.set_state(gst::State::Null);
+                        info!("✓ 旧パイプライン停止完了");
                     }
 
-                    // 新パイプラインをアクティブに
+                    // 新パイプラインをPlaying状態に切り替え
+                    info!("▶️  新パイプラインをPlaying状態に切り替え");
+                    let _ = new_pipeline.pipeline.set_state(gst::State::Playing);
+
+                    // 新パイプラインをアクティブに設定
                     active = Some(new_pipeline);
 
 
@@ -739,57 +747,11 @@ pub fn audio_main(
                                 );
                                 info!("✓ シーク完了");
 
-                                info!("▶️  パイプラインをPlaying状態に設定");
-                                let _ = next.pipeline.set_state(gst::State::Playing);
+                                // 🔥 重要：Paused状態のままメインスレッドに送信
+                                // メインスレッドで古いパイプラインを停止してからPlayingに切り替える
+                                info!("⏸️  パイプラインをPaused状態で準備完了、メインスレッドに送信");
 
-                                // 🔥 重要：バッファリング完了を待つ
-                                info!("⏳ バッファリング完了を待機中...");
-                                let buffering_start = std::time::Instant::now();
-                                let buffering_timeout = Duration::from_secs(5);
-                                let mut is_buffered = false;
-                                let mut last_percent = 0;
-
-                                while std::time::Instant::now().duration_since(buffering_start) < buffering_timeout {
-                                    // バッファリングメッセージを確認（短いタイムアウトで頻繁にチェック）
-                                    while let Some(msg) = next.bus.timed_pop(gst::ClockTime::from_mseconds(50)) {
-                                        use gst::MessageView;
-                                        match msg.view() {
-                                            MessageView::Buffering(buffering_msg) => {
-                                                let percent = buffering_msg.percent();
-                                                if percent != last_percent && (percent % 25 == 0 || percent >= 100) {
-                                                    info!("��� バッファリング進行: {}%", percent);
-                                                    last_percent = percent;
-                                                }
-                                                if percent >= 100 {
-                                                    is_buffered = true;
-                                                    info!("✅ バッファリング完了 (100%)");
-                                                    break;
-                                                }
-                                            }
-                                            MessageView::Error(err) => {
-                                                error!("❌ 新パイプラインでエラー: {}", err.error());
-                                                return;
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-
-                                    if is_buffered {
-                                        break;
-                                    }
-
-                                    // まだバッファリング中の場合は少し待機
-                                    std::thread::sleep(Duration::from_millis(50));
-                                }
-
-                                // バッファリングが完了していない場合でも、タイムアウト後は続行
-                                if !is_buffered {
-                                    warn!("⚠️  バッファリングタイムアウト、続行します");
-                                } else {
-                                    info!("🎵 新パイプラインの準備完了、切り替え可能");
-                                }
-
-                                // 完成したパイプラインをメインスレッドに送信
+                                // 完成したパイプラインをメインスレッドに送信（Paused状態のまま）
                                 if let Err(e) = switch_tx_clone.blocking_send(next) {
                                     error!("Failed to send new pipeline: {}", e);
                                 }

@@ -13,15 +13,8 @@ gstreamer = "0.22"
 gstreamer-app = "0.22"
 glib = "0.19"
 
-# オーディオ出力
-cpal = "0.15.3"
-
-# スレッドセーフなバッファ
-ringbuf = "0.3.3"
-
 # 簡単なエラーハンドリング
 anyhow = "1.0"
-bytemuck = "1.23.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tonic = "0.14.2"
@@ -30,7 +23,6 @@ native-tls = "0.2.11"
 tonic-prost = "0.14"
 prost = "0.14.1"
 tokio-stream = "0.1"
-chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.30"
 reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
