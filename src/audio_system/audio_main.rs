@@ -363,7 +363,9 @@ pub fn audio_main(
             // 既存のSEパイプラインがあれば停止
             if let Some(old_se) = se_pipeline.take() {
                 info!("🛑 既存のSEパイプラインを停止してクリーンアップ");
-                let _ = old_se.set_state(gst::State::Null);
+                if old_se.set_state(gst::State::Null).is_ok() {
+                    wait_for_state(&old_se, gst::State::Null, Duration::from_millis(500), "se_cleanup_on_activation");
+                }
             }
 
             // 新しいSEパイプラインを作成（システム有効化SE）
@@ -415,7 +417,9 @@ pub fn audio_main(
             // 既存のSEパイプラインがあれば停止
             if let Some(old_se) = se_pipeline.take() {
                 info!("🛑 既存のSEパイプラインを停止してクリーンアップ");
-                let _ = old_se.set_state(gst::State::Null);
+                if old_se.set_state(gst::State::Null).is_ok() {
+                    wait_for_state(&old_se, gst::State::Null, Duration::from_millis(500), "se_cleanup_on_new_request");
+                }
             }
 
             // 新しいSEパイプラインを作成（シンプルなワンショット再生）
@@ -487,7 +491,9 @@ pub fn audio_main(
                 if should_clear {
                     info!("🧹 SEパイプラインをクリーンアップして解放");
                     if let Some(se_pipe) = se_pipeline.take() {
-                        let _ = se_pipe.set_state(gst::State::Null);
+                        if se_pipe.set_state(gst::State::Null).is_ok() {
+                            wait_for_state(&se_pipe, gst::State::Null, Duration::from_millis(500), "se_cleanup_on_eos");
+                        }
                     }
                     // SE再生中フラグをリセット
                     is_se_playing = false;
