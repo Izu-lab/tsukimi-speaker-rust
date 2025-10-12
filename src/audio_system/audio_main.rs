@@ -613,64 +613,50 @@ pub fn audio_main(
                 }
 
                 let desired_sound = {
-                    // 1. 現在のロケーションのデバイス情報を取得
                     let sound_map_guard = sound_map.lock().unwrap();
-                    let current_device_addr = sound_map_guard.iter()
-                        .find(|(_, sound_file)| **sound_file == current_sound)
-                        .map(|(addr, _)| addr.clone());
 
-                    // 2. 現在のロケーションがスキャンできているかチェック
-                    if let Some(addr) = current_device_addr {
-                        if let Some(current_dev) = detected_devices.get(&addr) {
-                            // --- 現在地を捕捉できている場合 ---
-                            let current_location_rssi = current_dev.rssi;
+                    // 1. 現在のロケーションのRSSIを取得
+                    let current_location_rssi = {
+                        let current_device_addr = sound_map_guard.iter()
+                            .find(|(_, sound_file)| **sound_file == current_sound)
+                            .map(|(addr, _)| addr.clone());
 
-                            // 最もRSSIが強いデバイス（ベストロケーション）を見つける
-                            let best_location = detected_devices.values()
-                                .filter(|d| sound_map_guard.contains_key(&d.address))
-                                .max_by_key(|d| d.rssi);
+                        if let Some(addr) = current_device_addr {
+                            // 現在地のビーコンが見つかればそのRSSIを、見つからなければ最低値を設定
+                            detected_devices.get(&addr).map_or(i16::MIN, |d| d.rssi)
+                        } else {
+                            // 現在のサウンドがデフォルト等の場合も最低値
+                            i16::MIN
+                        }
+                    };
 
-                            if let Some(best_dev) = best_location {
-                                // ベストロケーションのRSSIが現在のRSSIを十分に上回っているか？
-                                if best_dev.rssi > current_location_rssi + 3 { // +3のヒステリシスマージン
-                                    let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
-                                    if new_sound != current_sound {
-                                        info!(
-                                            current_rssi = current_location_rssi,
-                                            best_rssi = best_dev.rssi,
-                                            new_sound = %new_sound,
-                                            "Switching BGM based on stronger RSSI"
-                                        );
-                                        new_sound // 切り替え先のサウンドを返す
-                                    } else {
-                                        current_sound.clone() // 同じサウンドなので維持
-                                    }
-                                } else {
-                                    current_sound.clone() // RSSIが上回らないので維持
-                                }
+                    // 2. 最もRSSIが強いデバイス（ベストロケーション）を見つける
+                    let best_location = detected_devices.values()
+                        .filter(|d| sound_map_guard.contains_key(&d.address))
+                        .max_by_key(|d| d.rssi);
+
+                    // 3. 切り替え判断
+                    if let Some(best_dev) = best_location {
+                        // ベストロケーションのRSSIが現在のRSSIを十分に上回っているか？
+                        if best_dev.rssi > current_location_rssi + 3 { // +3のヒステリシスマージン
+                            let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
+                            if new_sound != current_sound {
+                                info!(
+                                    current_rssi = current_location_rssi,
+                                    best_rssi = best_dev.rssi,
+                                    new_sound = %new_sound,
+                                    "Switching BGM based on stronger RSSI"
+                                );
+                                new_sound // 切り替え先のサウンドを返す
                             } else {
-                                current_sound.clone() // 他にデバイスが見つからないので維持
+                                current_sound.clone() // 同じサウンドなので維持
                             }
                         } else {
-                            // --- 現在地を捕捉できていない（スキャン範囲外）場合 ---
-                            info!(
-                                current_sound = %current_sound,
-                                "Current location's beacon is not detected. Maintaining current BGM."
-                            );
-                            current_sound.clone() // BGMを維持
+                            current_sound.clone() // RSSIが上回らないので維持
                         }
                     } else {
-                        // --- 現在のサウンドが sound_map にない（デフォルトなど）場合 ---
-                        // 最も強いデバイスがあればそれに切り替え、なければデフォルトを維持
-                        let best_location = detected_devices.values()
-                            .filter(|d| sound_map_guard.contains_key(&d.address))
-                            .max_by_key(|d| d.rssi);
-
-                        if let Some(best_dev) = best_location {
-                            sound_map_guard.get(&best_dev.address).unwrap().clone()
-                        } else {
-                            default_sound.clone()
-                        }
+                        // sound_mapに登録されているデバイスが1つも検知されなかった場合、デフォルトに戻す
+                        default_sound.clone()
                     }
                 };
 
