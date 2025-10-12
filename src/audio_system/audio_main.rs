@@ -612,67 +612,66 @@ pub fn audio_main(
                     }
                 }
 
-                // ベストデバイス選定
-                const RSSI_THRESHOLD: i16 = -90;
+                let desired_sound = {
+                    // 1. 現在のロケーションのデバイス情報を取得
+                    let sound_map_guard = sound_map.lock().unwrap();
+                    let current_device_addr = sound_map_guard.iter()
+                        .find(|(_, sound_file)| **sound_file == current_sound)
+                        .map(|(addr, _)| addr.clone());
 
-                let best_device = {
-                    let sound_map = sound_map.lock().unwrap();
-                    let my_addr_opt_clone = my_address.lock().unwrap().clone();
-                    let points = *current_points.lock().unwrap();
+                    // 2. 現在のロケーションがスキャンできているかチェック
+                    if let Some(addr) = current_device_addr {
+                        if let Some(current_dev) = detected_devices.get(&addr) {
+                            // --- 現在地を捕捉できている場合 ---
+                            let current_location_rssi = current_dev.rssi;
 
-                    let mut candidates: Vec<_> = detected_devices.values()
-                        .filter(|d| sound_map.contains_key(&d.address) && d.rssi > RSSI_THRESHOLD)
-                        .collect();
+                            // 最もRSSIが強いデバイス（ベストロケーション）を見つける
+                            let best_location = detected_devices.values()
+                                .filter(|d| sound_map_guard.contains_key(&d.address))
+                                .max_by_key(|d| d.rssi);
 
-                    candidates.sort_by(|a, b| {
-                        let a_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if a.address == my_addr { points } else { 0 });
-                        let b_points = my_addr_opt_clone.as_deref().map_or(0, |my_addr| if b.address == my_addr { points } else { 0 });
-                        b_points.cmp(&a_points).then_with(|| b.rssi.cmp(&a.rssi))
-                    });
-
-                    candidates.first().cloned()
-                };
-
-                let all_below_threshold = {
-                    let sound_map = sound_map.lock().unwrap();
-
-                    let current_sound_device = detected_devices.values()
-                        .find(|d| {
-                            sound_map.get(&d.address)
-                                .map(|sound| sound == &current_sound)
-                                .unwrap_or(false)
-                        });
-
-                    if let Some(device) = current_sound_device {
-                        device.rssi <= RSSI_THRESHOLD
-                    } else if current_sound == default_sound {
-                        false
+                            if let Some(best_dev) = best_location {
+                                // ベストロケーションのRSSIが現在のRSSIを十分に上回っているか？
+                                if best_dev.rssi > current_location_rssi + 3 { // +3のヒステリシスマージン
+                                    let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
+                                    if new_sound != current_sound {
+                                        info!(
+                                            current_rssi = current_location_rssi,
+                                            best_rssi = best_dev.rssi,
+                                            new_sound = %new_sound,
+                                            "Switching BGM based on stronger RSSI"
+                                        );
+                                        new_sound // 切り替え先のサウンドを返す
+                                    } else {
+                                        current_sound.clone() // 同じサウンドなので維持
+                                    }
+                                } else {
+                                    current_sound.clone() // RSSIが上回らないので維持
+                                }
+                            } else {
+                                current_sound.clone() // 他にデバイスが見つからないので維持
+                            }
+                        } else {
+                            // --- 現在地を捕捉できていない（スキャン範囲外）場合 ---
+                            info!(
+                                current_sound = %current_sound,
+                                "Current location's beacon is not detected. Maintaining current BGM."
+                            );
+                            current_sound.clone() // BGMを維持
+                        }
                     } else {
-                        let registered_devices: Vec<_> = detected_devices.values()
-                            .filter(|d| sound_map.contains_key(&d.address))
-                            .collect();
+                        // --- 現在のサウンドが sound_map にない（デフォルトなど）場合 ---
+                        // 最も強いデバイスがあればそれに切り替え、なければデフォルトを維持
+                        let best_location = detected_devices.values()
+                            .filter(|d| sound_map_guard.contains_key(&d.address))
+                            .max_by_key(|d| d.rssi);
 
-                        !registered_devices.is_empty() && registered_devices.iter().all(|d| d.rssi <= RSSI_THRESHOLD)
+                        if let Some(best_dev) = best_location {
+                            sound_map_guard.get(&best_dev.address).unwrap().clone()
+                        } else {
+                            default_sound.clone()
+                        }
                     }
-                };
-
-                let desired_sound = if let Some(device) = best_device {
-                    let sound_map = sound_map.lock().unwrap();
-                    // sound_mapには既にポイント付きファイル名が格納されている
-                    let sound = sound_map.get(&device.address).cloned().unwrap_or_else(|| current_sound.clone());
-                    info!(
-                        device_address = %device.address,
-                        device_rssi = device.rssi,
-                        selected_sound = %sound,
-                        "🎵 デバイスに基づいて音源を選択"
-                    );
-                    sound
-                } else if all_below_threshold {
-                    // デフォルトサウンド（既に_1.mp3形式）
-                    info!(selected_sound = %default_sound, "🎵 全デバイスが閾値以下、デフォルト音源を選択");
-                    default_sound.clone()
-                } else {
-                    current_sound.clone()
                 };
 
                 // 非同期切り替えの完了チェック
