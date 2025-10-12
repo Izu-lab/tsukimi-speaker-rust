@@ -374,41 +374,51 @@ async fn run_device_service_client(
                                     };
 
                                     if is_my_address {
-                                        let old_points = {
-                                            let points = current_points.lock().unwrap();
-                                            *points
-                                        };
-
-                                        {
-                                            let mut points = current_points.lock().unwrap();
-                                            *points = point_update.points;
-                                        }
-
+                                        let old_points = *current_points.lock().unwrap();
                                         let new_points = point_update.points;
 
-                                        // 初期化フラグをチェック
-                                        let is_initialized = {
-                                            let mut initialized = points_initialized.lock().unwrap();
-                                            let was_initialized = *initialized;
-                                            if !was_initialized {
-                                                *initialized = true;
-                                                info!("First point update received, initializing points without SE");
+                                        // ポイントが実際に変更された場合のみ処理
+                                        if old_points != new_points {
+                                            info!(user_id = %point_update.user_id, %old_points, %new_points, "Point value has changed. Updating.");
+
+                                            // 1. ポイント数を更新
+                                            *current_points.lock().unwrap() = new_points;
+
+                                            // 2. sound_mapを新しいポイント数で再構築
+                                            {
+                                                let mut sound_map_guard = sound_map.lock().unwrap();
+                                                let location_types_guard = location_place_types.lock().unwrap();
+                                                info!("Rebuilding sound_map with new points...");
+                                                // sound_map のキー（アドレス）はそのままに、値（サウンドファイル名）だけを更新
+                                                for (addr, sound_file) in sound_map_guard.iter_mut() {
+                                                    if let Some(place_type) = location_types_guard.get(addr) {
+                                                        *sound_file = get_sound_file_from_place_type_and_points(place_type, new_points);
+                                                    }
+                                                }
+                                                info!(?sound_map_guard, "Rebuilt sound_map complete.");
                                             }
-                                            was_initialized
-                                        };
 
-                                        info!(user_id = %point_update.user_id, points = new_points, old_points = old_points, is_initialized = is_initialized, "Updated my points");
 
-                                        // ポイントが増えた場合に音を再生（ただし初回は除く）
-                                        if is_initialized && new_points > old_points {
-                                            info!(points_gained = new_points - old_points, "Points increased! Playing sound effect");
-                                            let se_request = crate::audio_system::audio_main::SePlayRequest {
-                                                file_path: "se-point.mp3".to_string(), // ポイント獲得音
+                                            // 3. ポイント増加時のSE再生（初回は除く）
+                                            let is_initialized = {
+                                                let mut initialized = points_initialized.lock().unwrap();
+                                                if !*initialized {
+                                                    *initialized = true;
+                                                    info!("First point update received, initializing points without SE");
+                                                    false // 初回なのでSEは鳴らさない
+                                                } else {
+                                                    true // 初期化済み
+                                                }
                                             };
-                                            if let Err(e) = se_tx.send(se_request).await {
-                                                error!("Failed to send SE play request for point gain: {}", e);
-                                            } else {
-                                                info!("Point gain SE play request sent successfully");
+
+                                            if is_initialized && new_points > old_points {
+                                                info!(points_gained = new_points - old_points, "Points increased! Playing sound effect");
+                                                let se_request = crate::audio_system::audio_main::SePlayRequest {
+                                                    file_path: "se-point.mp3".to_string(),
+                                                };
+                                                if let Err(e) = se_tx.send(se_request).await {
+                                                    error!("Failed to send SE play request for point gain: {}", e);
+                                                }
                                             }
                                         }
                                     } else {
