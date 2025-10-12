@@ -35,6 +35,16 @@ struct PipelineState {
     volume: gst::Element,
 }
 
+impl Drop for PipelineState {
+    fn drop(&mut self) {
+        // パイプラインをNULL状態に設定してリソースを解放する
+        // これにより、PLAYING状態のまま要素が破棄されるのを防ぐ
+        if let Err(err) = self.pipeline.set_state(gst::State::Null) {
+            warn!(pipeline_name = %self.pipeline.name(), ?err, "Failed to set pipeline to NULL state on drop.");
+        }
+    }
+}
+
 fn sink_name() -> &'static str {
     #[cfg(target_os = "linux")]
     { "pulsesink" }
@@ -251,40 +261,48 @@ pub fn audio_main(
     'main_loop: loop {
         // システム有効化状態のチェック
         if let Ok(state) = system_enabled_rx.try_recv() {
-            info!(enabled = state.enabled, "System enabled state changed");
-            system_enabled = state.enabled;
+            // 自分向けのイベントか確認
+            let my_addr_guard = my_address.lock().unwrap();
+            if my_addr_guard.as_ref() == Some(&state.target_device_id) {
+                info!(enabled = state.enabled, target = %state.target_device_id, "Received SystemEnabledState for me");
+                system_enabled = state.enabled;
 
-            if !system_enabled {
-                // システムが無効化された場合、すべてのパイプラインを停止
-                info!("🛑 System disabled - stopping all audio pipelines");
+                if !system_enabled {
+                    // システムが無効化された場合、すべてのパイプラインを停止
+                    info!("🛑 System disabled - stopping all audio pipelines");
 
-                if let Some(act) = active.take() {
-                    let _ = act.pipeline.set_state(gst::State::Null);
-                    info!("Stopped active pipeline");
+                    if let Some(act) = active.take() {
+                        info!("Stopped active pipeline");
+                    }
+
+                    if let Some(st) = standby.take() {
+                        info!("Stopped standby pipeline");
+                    }
+
+                    if let Some(se) = se_pipeline.take() {
+                        info!("Stopped SE pipeline");
+                    }
+
+                    is_se_playing = false;
+
+                    // 再生状態を初期化に戻す
+                    playback_state = PlaybackState::WaitingForFirstSync;
+                    info!("Audio system paused, waiting for system to be re-enabled");
+                } else {
+                    // システムが再有効化された場合
+                    info!("✅ My system is re-enabled - resuming audio system");
+                    playback_state = PlaybackState::WaitingForFirstSync;
+
+                    // 有効化SEを再生するフラグを立てる
+                    should_play_activation_se = true;
                 }
-
-                if let Some(st) = standby.take() {
-                    let _ = st.pipeline.set_state(gst::State::Null);
-                    info!("Stopped standby pipeline");
-                }
-
-                if let Some(se) = se_pipeline.take() {
-                    let _ = se.set_state(gst::State::Null);
-                    info!("Stopped SE pipeline");
-                }
-
-                is_se_playing = false;
-
-                // 再生状態を初期化に戻す
-                playback_state = PlaybackState::WaitingForFirstSync;
-                info!("Audio system paused, waiting for system to be re-enabled");
             } else {
-                // システムが再有効化された場合
-                info!("✅ System re-enabled - resuming audio system");
-                playback_state = PlaybackState::WaitingForFirstSync;
-
-                // 有効化SEを再生するフラグを立てる
-                should_play_activation_se = true;
+                // 他人向けのイベントは無視
+                debug!(
+                    my_addr = ?*my_addr_guard,
+                    target_addr = %state.target_device_id,
+                    "Ignoring SystemEnabledState for another device"
+                );
             }
         }
 
@@ -595,7 +613,7 @@ pub fn audio_main(
                 }
 
                 // ベストデバイス選定
-                const RSSI_THRESHOLD: i16 = -70;
+                const RSSI_THRESHOLD: i16 = -90;
 
                 let best_device = {
                     let sound_map = sound_map.lock().unwrap();

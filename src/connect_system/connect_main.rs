@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct SystemEnabledState {
     pub enabled: bool,
+    pub target_device_id: String,
 }
 
 // インタラクション用の構造体
@@ -161,10 +162,10 @@ async fn run_device_service_client(
     // ロケーション情報のキャッシュ（address -> place_type）
     let location_place_types = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
-    // RSSI閾値（この値を上回ったらインタラクション発動）
-    // RSSIは0に近いほど距離が近い（例: -35より-30の方が近い）
-    // -35 → -45に変更して、より遠い距離でも反応するようにする
     const INTERACTION_RSSI_THRESHOLD: i16 = -45;
+
+    // ポイント初期化フラグ（起動直後の初回更新でSEを鳴らさないため）
+    let points_initialized = Arc::new(Mutex::new(false));
 
     // デバイス情報を監視するためのRxクローン
     let mut interaction_rx = rx.resubscribe();
@@ -181,20 +182,9 @@ async fn run_device_service_client(
         loop {
             match interaction_rx.recv().await {
                 Ok(device_info) => {
-                    // 自分自身のデバイス情報かチェック
-                    let is_my_device = {
-                        let my_addr = my_address_for_interaction.lock().unwrap();
-                        my_addr.as_ref().map(|addr| *addr == device_info.address).unwrap_or(false)
-                    };
+                    // is_my_device チェックはユーザーの要望により無効化。
+                    // sound_mapに登録されているデバイスであれば、RSSI閾値を超えた場合にインタラクションを試みる。
 
-                    // 自分自身のデバイスでない場合はスキップ
-                    if !is_my_device {
-                        debug!(
-                            address = %device_info.address,
-                            "Received device info for another device, skipping interaction check"
-                        );
-                        continue;
-                    }
 
                     // 前回のRSSIを取得
                     let prev_rssi = last_rssi_map.get(&device_info.address).copied().unwrap_or(i16::MIN);
@@ -395,10 +385,22 @@ async fn run_device_service_client(
                                         }
 
                                         let new_points = point_update.points;
-                                        info!(user_id = %point_update.user_id, points = new_points, old_points = old_points, "Updated my points");
 
-                                        // ポイントが増えた場合に音を再生
-                                        if new_points > old_points {
+                                        // 初期化フラグをチェック
+                                        let is_initialized = {
+                                            let mut initialized = points_initialized.lock().unwrap();
+                                            let was_initialized = *initialized;
+                                            if !was_initialized {
+                                                *initialized = true;
+                                                info!("First point update received, initializing points without SE");
+                                            }
+                                            was_initialized
+                                        };
+
+                                        info!(user_id = %point_update.user_id, points = new_points, old_points = old_points, is_initialized = is_initialized, "Updated my points");
+
+                                        // ポイントが増えた場合に音を再生（ただし初回は除く）
+                                        if is_initialized && new_points > old_points {
                                             info!(points_gained = new_points - old_points, "Points increased! Playing sound effect");
                                             let se_request = crate::audio_system::audio_main::SePlayRequest {
                                                 file_path: "se-point.mp3".to_string(), // ポイント獲得音
@@ -443,6 +445,7 @@ async fn run_device_service_client(
 
                                                 let state = SystemEnabledState {
                                                     enabled: moonlight.enabled,
+                                                    target_device_id: device_id.clone(),
                                                 };
 
                                                 if let Err(e) = system_enabled_tx.send(state) {
