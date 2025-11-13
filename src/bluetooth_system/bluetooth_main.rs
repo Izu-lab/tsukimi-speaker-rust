@@ -203,6 +203,7 @@ pub async fn bluetooth_scanner(
 
 /// Linux固有: BlueZ経由でスキャンパラメータを最適化
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 async fn optimize_linux_scan_parameters(proxy: &Proxy<'_>) -> Result<()> {
     use zbus::zvariant::{Dict, Value, Type};
     use std::collections::HashMap;
@@ -235,6 +236,7 @@ async fn optimize_linux_scan_parameters(proxy: &Proxy<'_>) -> Result<()> {
 }
 
 #[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
 async fn optimize_linux_scan_parameters(_proxy: &()) -> Result<()> {
     Ok(())
 }

@@ -6,7 +6,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 
@@ -185,10 +185,25 @@ fn set_volume(volume: &gst::Element, v: f64) {
     volume.set_property("volume", v);
 }
 
-#[instrument(skip(rx, time_sync_rx, sound_map, se_rx, system_enabled_rx))]
+/// 指定された期間で音量を滑らかに変化させる非同期関数
+async fn fade(volume_element: gst::Element, start_vol: f64, end_vol: f64, duration: Duration) {
+    let steps = 50; // 50段階で音量を変更
+    let interval = duration / steps;
+
+    for i in 0..=steps {
+        let progress = i as f64 / steps as f64;
+        let current_vol = start_vol + (end_vol - start_vol) * progress;
+        set_volume(&volume_element, current_vol);
+        tokio::time::sleep(interval).await;
+    }
+    // 最終的な音量を確実に設定
+    set_volume(&volume_element, end_vol);
+}
+
+#[instrument(skip(rx, time_offset, sound_map, se_rx, system_enabled_rx))]
 pub fn audio_main(
     mut rx: broadcast::Receiver<Arc<DeviceInfo>>,
-    mut time_sync_rx: mpsc::Receiver<u64>,
+    time_offset: Arc<Mutex<i64>>,
     mut sound_setting_rx: mpsc::Receiver<SoundSetting>,
     mut se_rx: mpsc::Receiver<SePlayRequest>,
     mut system_enabled_rx: broadcast::Receiver<crate::connect_system::connect_main::SystemEnabledState>,
@@ -271,15 +286,15 @@ pub fn audio_main(
                     // システムが無効化された場合、すべてのパイプラインを停止
                     info!("🛑 System disabled - stopping all audio pipelines");
 
-                    if let Some(act) = active.take() {
+                    if let Some(_act) = active.take() {
                         info!("Stopped active pipeline");
                     }
 
-                    if let Some(st) = standby.take() {
+                    if let Some(_st) = standby.take() {
                         info!("Stopped standby pipeline");
                     }
 
-                    if let Some(se) = se_pipeline.take() {
+                    if let Some(_se) = se_pipeline.take() {
                         info!("Stopped SE pipeline");
                     }
 
@@ -349,8 +364,16 @@ pub fn audio_main(
             }
         }
 
-        // 最新サーバー時間を吸い上げ
-        while let Ok(t) = time_sync_rx.try_recv() { last_server_time_ns = Some(t); }
+        // 最新サーバー時間をtime_offsetから計算
+        let current_offset = *time_offset.lock().unwrap();
+        if current_offset != 0 { // オフセットが初期値(0)でなければ同期済みとみなす
+            let client_now_ns = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as i64;
+            let estimated_server_time_ns = (client_now_ns + current_offset) as u64;
+            last_server_time_ns = Some(estimated_server_time_ns);
+        }
 
         // システム有効化時のSE再生処理
         if should_play_activation_se && !is_se_playing {
@@ -668,22 +691,38 @@ pub fn audio_main(
 
                 // 非同期切り替えの完了チェック
                 if let Ok(new_pipeline) = switch_rx.try_recv() {
-                    info!("✅ 非同期切り替え完了、新パイプラインを適用");
+                    info!("✅ Crossfade starting: Applying new pipeline.");
 
-                    // 🔥 重要：旧パイプラインを先に停止してから新パイプラインを開始
-                    if let Some(old) = active.take() {
-                        info!("🛑 旧パイプラインを停止中...");
-                        let _ = old.pipeline.set_state(gst::State::Null);
-                        info!("✓ 旧パイプライン停止完了");
+                    let fade_duration = Duration::from_secs(2);
+
+                    // 1. 古いパイプラインをフェードアウトさせる
+                    if let Some(old_pipeline) = active.take() {
+                        info!("Fading out old pipeline...");
+                        let old_volume = old_pipeline.volume.clone();
+                        tokio::spawn(async move {
+                            fade(old_volume, 1.0, 0.0, fade_duration).await;
+                            info!("Fade out complete. Stopping old pipeline.");
+                            if let Err(e) = old_pipeline.pipeline.set_state(gst::State::Null) {
+                                warn!("Failed to set old pipeline to NULL: {}", e);
+                            }
+                        });
                     }
 
-                    // 新パイプラインをPlaying状態に切り替え
-                    info!("▶️  新パイプラインをPlaying状態に切り替え");
+                    // 2. 新しいパイプラインをフェードインさせる
+                    info!("Fading in new pipeline...");
+                    // 初期音量を0に設定
+                    set_volume(&new_pipeline.volume, 0.0);
+                    let new_volume = new_pipeline.volume.clone();
+                    // 再生開始
                     let _ = new_pipeline.pipeline.set_state(gst::State::Playing);
+                    // フェードイン処理を非同期で実行
+                    tokio::spawn(async move {
+                        fade(new_volume, 0.0, 1.0, fade_duration).await;
+                        info!("Fade in complete.");
+                    });
 
-                    // 新パイプラインをアクティブに設定
+                    // 新しいパイプラインをアクティブに設定
                     active = Some(new_pipeline);
-
 
                     // durationキャッシュを更新
                     if let Some(ref act) = active {
@@ -702,7 +741,7 @@ pub fn audio_main(
 
                     switching = false;
                     last_switch_end = Some(Instant::now());
-                    info!("🎉 音源切り替え完了");
+                    info!("🎉 Crossfade initiated.");
                 }
 
                 // 音源切り替えリクエスト処理

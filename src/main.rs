@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
     let current_points = Arc::new(Mutex::new(0_i32));
     let current_location_type = Arc::new(Mutex::new(String::from("main")));
     let my_address = Arc::new(Mutex::new(None::<String>));
+    let time_offset = Arc::new(Mutex::new(0_i64)); // 時刻オフセット
 
     // Bluetoothスキャナからのデータを受け取るためのmpscチャンネル
     let (bt_tx, mut bt_rx) = mpsc::channel::<Arc<DeviceInfo>>(32);
@@ -93,21 +94,18 @@ async fn main() -> Result<()> {
 
     // Bluetoothスキャナをバックグラウンドタスクとして実行
     info!("Spawning bluetooth scanner task");
-        let bluetooth_handle = {
-            let my_address_clone = Arc::clone(&my_address);
-            let sound_map_clone = Arc::clone(&sound_map);
-            tokio::spawn(
-                async move {
-                    if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone, sound_map_clone).await {
-                        error!("Bluetooth scanner error: {:?}", e);
-                    }
+    let bluetooth_handle = {
+        let my_address_clone = Arc::clone(&my_address);
+        let sound_map_clone = Arc::clone(&sound_map);
+        tokio::spawn(
+            async move {
+                if let Err(e) = bluetooth_scanner(bt_tx, my_address_clone, sound_map_clone).await {
+                    error!("Bluetooth scanner error: {:?}", e);
                 }
-                .instrument(tracing::info_span!("bluetooth_scanner_task")), 
-            )
-        };
-
-    // 時間同期のためのmpscチャンネル
-    let (time_sync_tx, time_sync_rx) = mpsc::channel::<u64>(32);
+            }
+            .instrument(tracing::info_span!("bluetooth_scanner_task")),
+        )
+    };
 
     // サウンド設定のためのmpscチャンネル
     let (sound_setting_tx, sound_setting_rx) = mpsc::channel::<SoundSetting>(32);
@@ -186,10 +184,11 @@ async fn main() -> Result<()> {
         let sound_setting_tx_clone = sound_setting_tx.clone();
         let se_tx_clone = se_tx.clone();
         let system_enabled_tx_clone = system_enabled_tx.clone();
+        let time_offset_clone = Arc::clone(&time_offset);
         tokio::spawn(
             async move {
                 if let Err(e) =
-                    connect_main(grpc_rx, time_sync_tx, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone, current_location_type_clone).await
+                    connect_main(grpc_rx, time_offset_clone, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone, current_location_type_clone).await
                 {
                     error!("Connect server error: {}", e);
                 }
@@ -206,9 +205,10 @@ async fn main() -> Result<()> {
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let time_offset_clone = Arc::clone(&time_offset);
         tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!("audio_playback_task").entered();
-            audio_main(audio_rx, time_sync_rx, sound_setting_rx, se_rx, audio_system_enabled_rx, sound_map_clone, my_address_clone, current_points_clone)
+            audio_main(audio_rx, time_offset_clone, sound_setting_rx, se_rx, audio_system_enabled_rx, sound_map_clone, my_address_clone, current_points_clone)
         })
     };
 

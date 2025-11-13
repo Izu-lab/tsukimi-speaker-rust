@@ -17,11 +17,6 @@ pub struct StreamDeviceInfoRequest {
     #[prost(message, repeated, tag = "2")]
     pub locations: ::prost::alloc::vec::Vec<LocationRssi>,
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TimeUpdate {
-    #[prost(int64, tag = "1")]
-    pub elapsed_nanoseconds: i64,
-}
 /// Locationの完全な情報を表すメッセージ
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LocationInfo {
@@ -93,15 +88,13 @@ pub struct MoonlightUpdate {
 /// サーバーからストリーミングされるメッセージ
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamDeviceInfoResponse {
-    #[prost(oneof = "stream_device_info_response::Event", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "stream_device_info_response::Event", tags = "2, 3, 4, 5")]
     pub event: ::core::option::Option<stream_device_info_response::Event>,
 }
 /// Nested message and enum types in `StreamDeviceInfoResponse`.
 pub mod stream_device_info_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Event {
-        #[prost(message, tag = "1")]
-        TimeUpdate(super::TimeUpdate),
         #[prost(message, tag = "2")]
         LocationUpdate(super::LocationUpdate),
         #[prost(message, tag = "3")]
@@ -429,14 +422,21 @@ pub mod device_service_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
-/// StreamTimeのリクエストメッセージ（空でOK）
+/// SyncTimeのリクエストメッセージ
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StreamTimeRequest {}
-/// StreamTimeのレスポンスメッセージ
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StreamTimeResponse {
+pub struct SyncTimeRequest {
     #[prost(int64, tag = "1")]
-    pub elapsed_nanoseconds: i64,
+    pub client_send_time: i64,
+}
+/// SyncTimeのレスポンスメッセージ
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SyncTimeResponse {
+    #[prost(int64, tag = "1")]
+    pub client_send_time: i64,
+    #[prost(int64, tag = "2")]
+    pub server_receive_time: i64,
+    #[prost(int64, tag = "3")]
+    pub server_send_time: i64,
 }
 /// Generated client implementations.
 pub mod time_service_client {
@@ -530,12 +530,12 @@ pub mod time_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// StreamTimeメソッドはサーバーからクライアントへのストリーミング
-        pub async fn stream_time(
+        /// SyncTimeメソッドはNTPを参考にした時刻同期（双方向ストリーミング）
+        pub async fn sync_time(
             &mut self,
-            request: impl tonic::IntoRequest<super::StreamTimeRequest>,
+            request: impl tonic::IntoStreamingRequest<Message = super::SyncTimeRequest>,
         ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::StreamTimeResponse>>,
+            tonic::Response<tonic::codec::Streaming<super::SyncTimeResponse>>,
             tonic::Status,
         > {
             self.inner
@@ -548,12 +548,12 @@ pub mod time_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/proto.TimeService/StreamTime",
+                "/proto.TimeService/SyncTime",
             );
-            let mut req = request.into_request();
+            let mut req = request.into_streaming_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("proto.TimeService", "StreamTime"));
-            self.inner.server_streaming(req, path, codec).await
+                .insert(GrpcMethod::new("proto.TimeService", "SyncTime"));
+            self.inner.streaming(req, path, codec).await
         }
     }
 }
@@ -570,17 +570,17 @@ pub mod time_service_server {
     /// Generated trait containing gRPC methods that should be implemented for use with TimeServiceServer.
     #[async_trait]
     pub trait TimeService: std::marker::Send + std::marker::Sync + 'static {
-        /// Server streaming response type for the StreamTime method.
-        type StreamTimeStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::StreamTimeResponse, tonic::Status>,
+        /// Server streaming response type for the SyncTime method.
+        type SyncTimeStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::SyncTimeResponse, tonic::Status>,
             >
             + std::marker::Send
             + 'static;
-        /// StreamTimeメソッドはサーバーからクライアントへのストリーミング
-        async fn stream_time(
+        /// SyncTimeメソッドはNTPを参考にした時刻同期（双方向ストリーミング）
+        async fn sync_time(
             &self,
-            request: tonic::Request<super::StreamTimeRequest>,
-        ) -> std::result::Result<tonic::Response<Self::StreamTimeStream>, tonic::Status>;
+            request: tonic::Request<tonic::Streaming<super::SyncTimeRequest>>,
+        ) -> std::result::Result<tonic::Response<Self::SyncTimeStream>, tonic::Status>;
     }
     /// 時刻をストリーミングするサービス
     #[derive(Debug)]
@@ -659,26 +659,28 @@ pub mod time_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/proto.TimeService/StreamTime" => {
+                "/proto.TimeService/SyncTime" => {
                     #[allow(non_camel_case_types)]
-                    struct StreamTimeSvc<T: TimeService>(pub Arc<T>);
+                    struct SyncTimeSvc<T: TimeService>(pub Arc<T>);
                     impl<
                         T: TimeService,
-                    > tonic::server::ServerStreamingService<super::StreamTimeRequest>
-                    for StreamTimeSvc<T> {
-                        type Response = super::StreamTimeResponse;
-                        type ResponseStream = T::StreamTimeStream;
+                    > tonic::server::StreamingService<super::SyncTimeRequest>
+                    for SyncTimeSvc<T> {
+                        type Response = super::SyncTimeResponse;
+                        type ResponseStream = T::SyncTimeStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::StreamTimeRequest>,
+                            request: tonic::Request<
+                                tonic::Streaming<super::SyncTimeRequest>,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as TimeService>::stream_time(&inner, request).await
+                                <T as TimeService>::sync_time(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -689,7 +691,7 @@ pub mod time_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = StreamTimeSvc(inner);
+                        let method = SyncTimeSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -700,7 +702,7 @@ pub mod time_service_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.server_streaming(method, req).await;
+                        let res = grpc.streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

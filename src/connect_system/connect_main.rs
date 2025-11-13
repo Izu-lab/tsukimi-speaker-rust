@@ -1,11 +1,11 @@
 use crate::proto::proto::device_service_client::DeviceServiceClient;
 use crate::proto::proto::stream_device_info_response::Event;
 use crate::proto::proto::time_service_client::TimeServiceClient;
-use crate::proto::proto::{LocationRssi, SoundSetting, StreamDeviceInfoRequest, StreamTimeRequest};
+use crate::proto::proto::{LocationRssi, SoundSetting, StreamDeviceInfoRequest, SyncTimeRequest};
 use crate::DeviceInfo;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -77,13 +77,6 @@ fn get_sound_file_from_place_type_and_points(place_type: &str, points: i32) -> S
     // ポイント0の場合は1として扱う
     let effective_points = if points == 0 { 1 } else { points };
     format!("tsukimi-{}_{}.mp3", base_type, effective_points)
-}
-
-/// ポイント数とロケーションタイプに基づいてBGMファイル名を生成する
-fn get_sound_file_with_points(location_type: &str, points: i32) -> String {
-    // ポイント0の場合は1として扱う
-    let effective_points = if points == 0 { 1 } else { points };
-    format!("tsukimi-{}_{}.mp3", location_type, effective_points)
 }
 
 /// place_typeに基づいてSEファイル名を決定する
@@ -322,9 +315,6 @@ async fn run_device_service_client(
                     Ok(res) => {
                         if let Some(event) = res.event {
                             match event {
-                                Event::TimeUpdate(time_update) => {
-                                    debug!(?time_update, "TimeUpdate received");
-                                }
                                 Event::LocationUpdate(location_update) => {
                                     info!(?location_update, "LocationUpdate received");
                                     let mut sound_map = sound_map.lock().unwrap();
@@ -509,39 +499,78 @@ async fn run_device_service_client(
     }
 }
 
-#[instrument(skip(client, time_sync_tx))]
-async fn run_time_service_client(
+#[instrument(skip(client, time_offset))]
+async fn run_time_sync_client(
     mut client: TimeServiceClient<Channel>,
-    time_sync_tx: mpsc::Sender<u64>,
+    time_offset: Arc<Mutex<i64>>,
 ) {
-    info!("Starting TimeService client...");
-    let request = tonic::Request::new(StreamTimeRequest {});
-    match client.stream_time(request).await {
+    info!("Starting TimeService client for time synchronization...");
+
+    let (request_tx, request_rx) = mpsc::channel(1);
+
+    // 5秒ごとにSyncTimeRequestを送信するタスク
+    tokio::spawn(async move {
+        loop {
+            let client_send_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as i64;
+            let request = SyncTimeRequest { client_send_time };
+            if request_tx.send(request).await.is_err() {
+                error!("Failed to send time sync request, receiver is closed.");
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+
+    let request_stream = tokio_stream::wrappers::ReceiverStream::new(request_rx);
+
+    match client.sync_time(request_stream).await {
         Ok(response) => {
-            info!("TimeService connected. Waiting for responses...");
+            info!("TimeService connected. Waiting for sync responses...");
             let mut stream = response.into_inner();
             while let Some(item) = stream.next().await {
                 match item {
                     Ok(res) => {
-                        debug!(?res, "Received time from server");
-                        if let Err(e) = time_sync_tx.send(res.elapsed_nanoseconds as u64).await {
-                            error!("Failed to send time sync data: {}", e);
+                        let client_receive_time = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_nanos() as i64;
+
+                        let client_send_time = res.client_send_time;
+                        let server_receive_time = res.server_receive_time;
+                        let server_send_time = res.server_send_time;
+
+                        // NTPの計算式を参考にオフセットと遅延を計算
+                        let round_trip_delay = (client_receive_time - client_send_time) - (server_send_time - server_receive_time);
+                        let offset = ((server_receive_time - client_send_time) + (server_send_time - client_receive_time)) / 2;
+
+                        {
+                            let mut time_offset_guard = time_offset.lock().unwrap();
+                            *time_offset_guard = offset;
                         }
+
+                        info!(
+                            offset_ms = offset / 1_000_000,
+                            delay_ms = round_trip_delay / 1_000_000,
+                            "Time synchronized"
+                        );
                     }
                     Err(e) => error!("TimeService stream error: {}", e),
                 }
             }
         }
         Err(e) => {
-            error!("Failed to connect to TimeService: {}", e);
+            error!("Failed to connect to TimeService for sync: {}", e);
         }
     }
 }
 
-#[instrument(skip(rx, time_sync_tx, sound_map, se_tx, system_enabled_tx))]
+#[instrument(skip(rx, time_offset, sound_map, se_tx, system_enabled_tx))]
 pub async fn connect_main(
     rx: broadcast::Receiver<Arc<DeviceInfo>>,
-    time_sync_tx: mpsc::Sender<u64>,
+    time_offset: Arc<Mutex<i64>>,
     sound_setting_tx: mpsc::Sender<SoundSetting>,
     se_tx: mpsc::Sender<crate::audio_system::audio_main::SePlayRequest>,
     system_enabled_tx: broadcast::Sender<SystemEnabledState>,
@@ -550,11 +579,11 @@ pub async fn connect_main(
     current_points: Arc<Mutex<i32>>,
     current_location_type: Arc<Mutex<String>>,
 ) -> anyhow::Result<()> {
-    let server_addr = "http://35.221.123.49:50051";
+    let server_addr = "http://34.146.133.142:50051";
     info!("Connecting to gRPC server at {}", server_addr);
 
     // サーバーに接続できるまでリトライ
-    let channel = loop {
+    loop {
         match Endpoint::from_static(server_addr)
             .connect_timeout(Duration::from_secs(5))
             .connect()
@@ -562,52 +591,82 @@ pub async fn connect_main(
         {
             Ok(channel) => {
                 info!("Successfully connected to gRPC server.");
-                break channel;
+
+                // DeviceServiceクライアント
+                let device_client = DeviceServiceClient::new(channel.clone());
+
+                // TimeServiceクライアント
+                let time_client = TimeServiceClient::new(channel);
+
+                info!("Spawning gRPC client tasks...");
+                let device_service_handle = {
+                    let sound_map_clone = Arc::clone(&sound_map);
+                    let my_address_clone = Arc::clone(&my_address);
+                    let current_points_clone = Arc::clone(&current_points);
+                    let current_location_type_clone = Arc::clone(&current_location_type);
+                    let sound_setting_tx_clone = sound_setting_tx.clone();
+                    let se_tx_clone = se_tx.clone();
+                    let system_enabled_tx_clone = system_enabled_tx.clone();
+                    let rx_for_device_service = rx.resubscribe();
+                    tokio::spawn(run_device_service_client(
+                        device_client,
+                        rx_for_device_service,
+                        sound_setting_tx_clone,
+                        se_tx_clone,
+                        system_enabled_tx_clone,
+                        sound_map_clone,
+                        my_address_clone,
+                        current_points_clone,
+                        current_location_type_clone,
+                    ))
+                };
+                let time_service_handle =
+                    tokio::spawn(run_time_sync_client(time_client, time_offset.clone()));
+
+                // 両方のタスクが終了するのを待つ
+                let (device_result, time_result) = tokio::join!(device_service_handle, time_service_handle);
+
+                if let Err(e) = device_result {
+                    error!("Device service task failed: {}", e);
+                }
+                if let Err(e) = time_result {
+                    error!("Time service task failed: {}", e);
+                }
+
+                info!("gRPC client tasks finished. Retrying in 5 seconds...");
+
+                // 接続が切れたので、システムを有効状態にしておく
+                if let Some(my_addr) = my_address.lock().unwrap().clone() {
+                    let state = SystemEnabledState {
+                        enabled: true,
+                        target_device_id: my_addr,
+                    };
+                    if let Err(e) = system_enabled_tx.send(state) {
+                        error!("Failed to send system enabled state: {}", e);
+                    }
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
             Err(e) => {
                 error!(
                     "Failed to connect to server: {:?}. Retrying in 5 seconds...",
                     e
                 );
+
+                // 接続失敗時も、システムを有効状態にしておく
+                if let Some(my_addr) = my_address.lock().unwrap().clone() {
+                    let state = SystemEnabledState {
+                        enabled: true,
+                        target_device_id: my_addr,
+                    };
+                    if let Err(e) = system_enabled_tx.send(state) {
+                        error!("Failed to send system enabled state: {}", e);
+                    }
+                }
+
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
         }
-    };
-
-    // DeviceServiceクライアント
-    let device_client = DeviceServiceClient::new(channel.clone());
-
-    // TimeServiceクライアント
-    let time_client = TimeServiceClient::new(channel);
-
-    info!("Spawning gRPC client tasks...");
-    let device_service_handle = {
-        let sound_map_clone = Arc::clone(&sound_map);
-        let my_address_clone = Arc::clone(&my_address);
-        let current_points_clone = Arc::clone(&current_points);
-        let current_location_type_clone = Arc::clone(&current_location_type);
-        let sound_setting_tx_clone = sound_setting_tx.clone();
-        let se_tx_clone = se_tx.clone();
-        let system_enabled_tx_clone = system_enabled_tx.clone();
-        tokio::spawn(run_device_service_client(
-            device_client,
-            rx,
-            sound_setting_tx_clone,
-            se_tx_clone,
-            system_enabled_tx_clone,
-            sound_map_clone,
-            my_address_clone,
-            current_points_clone,
-            current_location_type_clone,
-        ))
-    };
-    let time_service_handle = tokio::spawn(run_time_service_client(time_client, time_sync_tx));
-
-    // 両方のタスクが終了するのを待つ
-    if let Err(e) = tokio::try_join!(device_service_handle, time_service_handle) {
-        error!("gRPC client task failed: {}", e);
     }
-
-    info!("gRPC client tasks finished.");
-    Ok(())
 }
