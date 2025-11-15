@@ -70,7 +70,7 @@ if [ -f "$INSTALL_FLAG" ]; then
 
     # プログラムを実行
     log "Tsukimi Speaker プログラム起動中..."
-    ./target/release/tsukimi-speaker 2>&1 | tee -a "$LOG_FILE"
+    ./target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker 2>&1 | tee -a "$LOG_FILE"
 
     exit 0
 fi
@@ -130,11 +130,14 @@ fi
 
 cd "$PROJECT_DIR"
 
-# 4. プログラムのビルド
-log "Step 4: プログラムのビルド"
-source $HOME/.cargo/env
-cargo build --release 2>&1 | tee -a "$LOG_FILE"
-log "ビルド完了"
+# 4. プログラムのビルド確認
+log "Step 4: プログラムのビルド確認"
+if [ ! -f "${PROJECT_DIR}/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker" ]; then
+    log "エラー: ビルド済みバイナリが見つかりません: ${PROJECT_DIR}/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker"
+    log "プログラムを事前にビルドしてください。"
+    exit 1
+fi
+log "ビルド済みバイナリ確認完了"
 
 # 5. Bluetooth設定
 log "Step 5: Bluetooth設定"
@@ -173,7 +176,7 @@ Wants=bluetooth.target
 Type=simple
 User=${CURRENT_USER}
 WorkingDirectory=${PROJECT_DIR}
-ExecStart=${PROJECT_DIR}/target/release/tsukimi-speaker
+ExecStart=${PROJECT_DIR}/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker
 Restart=always
 RestartSec=10
 Environment="RUST_LOG=info"
