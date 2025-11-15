@@ -37,20 +37,29 @@ mkdir -p "${USER_HOME}/.config/systemd/user/"
 echo "✓ ディレクトリを作成しました"
 echo ""
 
-# 3. ユーザーサービスファイルを作成
-echo "Step 3: ユーザーサービスファイルを作成..."
+# 3. PulseAudio ユーザーサービスを有効化
+echo "Step 3: PulseAudio ユーザーサービスを有効化..."
+systemctl --user --now enable pulseaudio.socket 2>/dev/null || true
+systemctl --user --now enable pulseaudio.service 2>/dev/null || true
+echo "✓ PulseAudio を有効化しました"
+echo ""
+
+# 4. ユーザーサービスファイルを作成
+echo "Step 4: ユーザーサービスファイルを作成..."
 cat > "${USER_HOME}/.config/systemd/user/tsukimi-speaker.service" << EOF
 [Unit]
 Description=Tsukimi Speaker Service
-After=pulseaudio.service bluetooth.target network-online.target
-Wants=pulseaudio.service bluetooth.target network-online.target
+After=default.target pulseaudio.service sound.target
+Requires=pulseaudio.service
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=${PROJECT_DIR}
+ExecStartPre=/bin/sleep 5
 ExecStart=${PROJECT_DIR}/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker
 Restart=always
-RestartSec=10
+RestartSec=15
 StandardOutput=journal
 StandardError=journal
 
@@ -60,21 +69,21 @@ EOF
 echo "✓ ユーザーサービスファイルを作成しました"
 echo ""
 
-# 4. ユーザーサービスを有効化
-echo "Step 4: ユーザーサービスを有効化..."
+# 5. ユーザーサービスを有効化
+echo "Step 5: ユーザーサービスを有効化..."
 systemctl --user daemon-reload
 systemctl --user enable tsukimi-speaker.service
 echo "✓ ユーザーサービスを有効化しました"
 echo ""
 
-# 5. loginctlでlinger を有効化（ログアウト後もサービスを実行し続ける）
-echo "Step 5: ログアウト後も実行し続けるよう設定..."
+# 6. loginctlでlinger を有効化（ログアウト後もサービスを実行し続ける）
+echo "Step 6: ログアウト後も実行し続けるよう設定..."
 sudo loginctl enable-linger ${CURRENT_USER}
 echo "✓ linger を有効化しました"
 echo ""
 
-# 6. ユーザーサービスを起動
-echo "Step 6: ユーザーサービスを起動..."
+# 7. ユーザーサービスを起動
+echo "Step 7: ユーザーサービスを起動..."
 systemctl --user start tsukimi-speaker.service
 echo "✓ サービスを起動しました"
 echo ""
