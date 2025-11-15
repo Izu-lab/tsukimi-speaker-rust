@@ -169,12 +169,13 @@ log "Step 7: 自動起動設定"
 sudo tee /etc/systemd/system/tsukimi-speaker.service > /dev/null << EOF
 [Unit]
 Description=Tsukimi Speaker Service
-After=network.target bluetooth.target pulseaudio.service
-Wants=bluetooth.target
+After=network-online.target bluetooth.target sound.target
+Wants=network-online.target bluetooth.target
 
 [Service]
 Type=simple
 User=${CURRENT_USER}
+Group=${CURRENT_USER}
 WorkingDirectory=${PROJECT_DIR}
 ExecStart=${PROJECT_DIR}/target/aarch64-unknown-linux-gnu/debug/tsukimi-speaker
 Restart=always

@@ -45,8 +45,8 @@ echo "Step 2: systemd サービスファイルを作成..."
 sudo tee /etc/systemd/system/tsukimi-setup.service > /dev/null << EOF
 [Unit]
 Description=Tsukimi Speaker Initial Setup and Auto Start
-After=network-online.target
-Wants=network-online.target
+After=network-online.target bluetooth.target sound.target
+Wants=network-online.target bluetooth.target
 
 [Service]
 Type=oneshot
