@@ -185,20 +185,7 @@ fn set_volume(volume: &gst::Element, v: f64) {
     volume.set_property("volume", v);
 }
 
-/// 指定された期間で音量を滑らかに変化させる非同期関数
-async fn fade(volume_element: gst::Element, start_vol: f64, end_vol: f64, duration: Duration) {
-    let steps = 50; // 50段階で音量を変更
-    let interval = duration / steps;
 
-    for i in 0..=steps {
-        let progress = i as f64 / steps as f64;
-        let current_vol = start_vol + (end_vol - start_vol) * progress;
-        set_volume(&volume_element, current_vol);
-        tokio::time::sleep(interval).await;
-    }
-    // 最終的な音量を確実に設定
-    set_volume(&volume_element, end_vol);
-}
 
 #[instrument(skip(rx, time_offset, sound_map, se_rx, system_enabled_rx))]
 pub fn audio_main(
@@ -691,35 +678,22 @@ pub fn audio_main(
 
                 // 非同期切り替えの完了チェック
                 if let Ok(new_pipeline) = switch_rx.try_recv() {
-                    info!("✅ Crossfade starting: Applying new pipeline.");
+                    info!("✅ Instant switch: Applying new pipeline.");
 
-                    let fade_duration = Duration::from_secs(2);
-
-                    // 1. 古いパイプラインをフェードアウトさせる
+                    // 1. 古いパイプラインを即座に停止
                     if let Some(old_pipeline) = active.take() {
-                        info!("Fading out old pipeline...");
-                        let old_volume = old_pipeline.volume.clone();
-                        tokio::spawn(async move {
-                            fade(old_volume, 1.0, 0.0, fade_duration).await;
-                            info!("Fade out complete. Stopping old pipeline.");
-                            if let Err(e) = old_pipeline.pipeline.set_state(gst::State::Null) {
-                                warn!("Failed to set old pipeline to NULL: {}", e);
-                            }
-                        });
+                        info!("Stopping old pipeline immediately.");
+                        if let Err(e) = old_pipeline.pipeline.set_state(gst::State::Null) {
+                            warn!("Failed to set old pipeline to NULL: {}", e);
+                        }
                     }
 
-                    // 2. 新しいパイプラインをフェードインさせる
-                    info!("Fading in new pipeline...");
-                    // 初期音量を0に設定
-                    set_volume(&new_pipeline.volume, 0.0);
-                    let new_volume = new_pipeline.volume.clone();
+                    // 2. 新しいパイプラインを即座に再生
+                    info!("Starting new pipeline immediately.");
+                    // 音量を最大に設定
+                    set_volume(&new_pipeline.volume, 1.0);
                     // 再生開始
                     let _ = new_pipeline.pipeline.set_state(gst::State::Playing);
-                    // フェードイン処理を非同期で実行
-                    tokio::spawn(async move {
-                        fade(new_volume, 0.0, 1.0, fade_duration).await;
-                        info!("Fade in complete.");
-                    });
 
                     // 新しいパイプラインをアクティブに設定
                     active = Some(new_pipeline);
@@ -741,7 +715,7 @@ pub fn audio_main(
 
                     switching = false;
                     last_switch_end = Some(Instant::now());
-                    info!("🎉 Crossfade initiated.");
+                    info!("🎉 Instant switch completed.");
                 }
 
                 // 音源切り替えリクエスト処理
