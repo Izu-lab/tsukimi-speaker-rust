@@ -615,7 +615,7 @@ pub fn audio_main(
                 if let (Some(server_time_ns), Some(ref act)) = (last_server_time_ns, active.as_ref()) {
                     // 切替中と直後のウィンドウはシークを行わない
                     let in_switch_guard = switching || last_switch_end.map_or(false, |t| Instant::now().duration_since(t) < SWITCH_GUARD_WINDOW);
-                    if initial_server_time_ns != 0 && !in_switch_guard {
+                    if initial_server_time_ns != 0 && !in_switch_guard && server_time_ns >= initial_server_time_ns {
                         let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
                         let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
                         let diff_real_ns = server_elapsed - client_elapsed;
