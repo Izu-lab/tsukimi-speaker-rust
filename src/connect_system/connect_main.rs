@@ -172,6 +172,8 @@ async fn run_device_service_client(
     let interaction_state_for_task = Arc::clone(&interaction_state);
     let se_tx_for_interaction = se_tx.clone();
     let latest_rssi_map_for_interaction = Arc::clone(&latest_rssi_map);
+    let sound_map_for_interaction = Arc::clone(&sound_map);
+    let current_location_type_for_interaction = Arc::clone(&current_location_type);
 
     tokio::spawn(async move {
         let mut last_rssi_map: HashMap<String, i16> = HashMap::new();
@@ -209,6 +211,25 @@ async fn run_device_service_client(
                         if let Some(place_type) = place_type {
                             // インタラクション可能な場所かチェック
                             if is_interactive_place_type(&place_type) {
+                                // 現在のBGMとインタラクションのロケーションが一致しているかチェック
+                                // current_location_typeはplace_typeのベースタイプを格納している
+                                let is_current_location = {
+                                    let current_location = current_location_type_for_interaction.lock().unwrap();
+                                    let base_type = get_base_location_type_from_place_type(&place_type);
+
+                                    // 現在のロケーションタイプとインタラクションのロケーションタイプが一致しているか
+                                    *current_location == base_type
+                                };
+
+                                if !is_current_location {
+                                    println!(
+                                        "⚠️  インタラクションスキップ: 現在のBGMと異なるロケーション (Address={}, PlaceType={})",
+                                        device_info.address, place_type
+                                    );
+                                    last_rssi_map.insert(device_info.address.clone(), current_rssi);
+                                    continue;
+                                }
+
                                 let can_interact = {
                                     let mut state = interaction_state_for_task.lock().unwrap();
                                     state.can_interact(&place_type)
