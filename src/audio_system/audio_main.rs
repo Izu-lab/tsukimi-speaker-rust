@@ -596,6 +596,26 @@ pub fn audio_main(
                     detected_devices.retain(|_, d| Instant::now().duration_since(d.last_seen) < CLEANUP_INTERVAL);
                     if initial_count != detected_devices.len() { debug!("Cleaned up old devices."); }
                     last_cleanup = Instant::now();
+
+                    // 検知されているLocationとそのRSSIを表示（環境変数に関係なく常に表示）
+                    let sound_map_guard = sound_map.lock().unwrap();
+                    let mut detected_locations: Vec<(String, String, i16)> = detected_devices.iter()
+                        .filter_map(|(addr, device)| {
+                            sound_map_guard.get(addr).map(|sound_file| {
+                                (addr.clone(), sound_file.clone(), device.rssi)
+                            })
+                        })
+                        .collect();
+
+                    if !detected_locations.is_empty() {
+                        detected_locations.sort_by(|a, b| b.2.cmp(&a.2)); // RSSIの降順でソート
+                        println!("📍 検知中のLocation数: {}", detected_locations.len());
+                        for (addr, sound, rssi) in detected_locations {
+                            println!("  └─ Location: {} | Sound: {} | RSSI: {} dBm", addr, sound, rssi);
+                        }
+                    } else {
+                        println!("📍 検知中のLocation: なし (デフォルトサウンド再生中)");
+                    }
                 }
 
                 // ドリフト補正（アクティブ側のみ）
