@@ -195,11 +195,9 @@ async fn run_device_service_client(
 
                     // RSSI閾値を上回った場合（0に近づいた = 近づいた場合）
                     if prev_rssi <= INTERACTION_RSSI_THRESHOLD && current_rssi > INTERACTION_RSSI_THRESHOLD {
-                        info!(
-                            address = %device_info.address,
-                            rssi = current_rssi,
-                            threshold = INTERACTION_RSSI_THRESHOLD,
-                            "I came very close to a location (RSSI > {}), checking for interaction", INTERACTION_RSSI_THRESHOLD
+                        println!(
+                            "🎯 インタラクション閾値突破: Address={}, RSSI={} dBm (閾値: {} dBm)",
+                            device_info.address, current_rssi, INTERACTION_RSSI_THRESHOLD
                         );
 
                         // place_typeを取得
@@ -217,11 +215,9 @@ async fn run_device_service_client(
                                 };
 
                                 if can_interact {
-                                    info!(
-                                        place_type = %place_type,
-                                        address = %device_info.address,
-                                        rssi = current_rssi,
-                                        "Triggering interaction"
+                                    println!(
+                                        "🔔 インタラクション発動: PlaceType={}, Address={}, RSSI={} dBm",
+                                        place_type, device_info.address, current_rssi
                                     );
 
                                     // SEファイルを取得してaudio_mainに送信
@@ -233,7 +229,7 @@ async fn run_device_service_client(
                                         if let Err(e) = se_tx_for_interaction.send(se_request).await {
                                             error!("Failed to send SE play request: {}", e);
                                         } else {
-                                            info!("SE play request sent successfully");
+                                            println!("✅ SE再生リクエスト送信成功: {}", se_file);
                                         }
                                     }
 
