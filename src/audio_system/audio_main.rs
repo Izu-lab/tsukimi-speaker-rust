@@ -427,6 +427,11 @@ pub fn audio_main(
             // SE再生中フラグを立てる
             is_se_playing = true;
 
+            // BGMの音量を下げる（SE再生中）
+            if let Some(ref act) = active {
+                set_volume(&act.volume, 0.3);
+                info!("🔉 BGM音量を0.3に下げました（SE再生開始）");
+            }
 
             // 既存のSEパイプラインがあれば停止
             if let Some(old_se) = se_pipeline.take() {
@@ -657,57 +662,63 @@ pub fn audio_main(
                 let desired_sound = {
                     let sound_map_guard = sound_map.lock().unwrap();
 
-                    // 1. 現在のロケーションのRSSIを取得
-                    let (current_location_rssi, current_location_detected) = {
-                        let current_device_addr = sound_map_guard.iter()
-                            .find(|(_, sound_file)| **sound_file == current_sound)
-                            .map(|(addr, _)| addr.clone());
-
-                        if let Some(addr) = current_device_addr {
-                            // 現在地のビーコンが見つかれば、検出されているかチェック
-                            if let Some(device) = detected_devices.get(&addr) {
-                                (device.rssi, true) // 検出されている
-                            } else {
-                                (i16::MIN, false) // 検出されていない
-                            }
-                        } else {
-                            // 現在のサウンドがデフォルト等の場合
-                            (i16::MIN, false)
-                        }
-                    };
-
-                    // 2. 最もRSSIが強いデバイス（ベストロケーション）を見つける
+                    // 1. 最もRSSIが強いデバイス（ベストロケーション）を見つける
                     let best_location = detected_devices.values()
                         .filter(|d| sound_map_guard.contains_key(&d.address))
                         .max_by_key(|d| d.rssi);
 
-                    // 3. 切り替え判断
                     if let Some(best_dev) = best_location {
-                        // 現在のロケーションが検出されていない場合は切り替えない
-                        if !current_location_detected {
-                            debug!(
-                                current_sound = %current_sound,
+                        let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
+
+                        // 2. 現在のBGMがデフォルト音源か？
+                        if current_sound == default_sound {
+                            // デフォルト音源からは常に切り替えを試みる
+                            info!(
+                                from = %current_sound,
+                                to = %new_sound,
+                                reason = "Current BGM is default, switching to best location",
                                 best_rssi = best_dev.rssi,
-                                "Current location not detected, but keeping current BGM"
+                                "Switching BGM"
                             );
-                            current_sound.clone() // 現在のBGMを維持
+                            new_sound
                         } else {
-                            // 現在のロケーションが検出されている場合のみ、RSSIを比較して切り替え判断
-                            if best_dev.rssi > current_location_rssi + 3 { // +3のヒステリシスマージン
-                                let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
-                                if new_sound != current_sound {
-                                    info!(
-                                        current_rssi = current_location_rssi,
-                                        best_rssi = best_dev.rssi,
-                                        new_sound = %new_sound,
-                                        "Switching BGM based on stronger RSSI"
-                                    );
-                                    new_sound // 切り替え先のサウンドを返す
+                            // 3. 現在のBGMがデフォルトでない場合
+                            // 現在のロケーションが検出されているか確認
+                            let current_device_addr_opt = sound_map_guard.iter()
+                                .find(|(_, sound_file)| **sound_file == current_sound)
+                                .map(|(addr, _)| addr);
+
+                            if let Some(current_device_addr) = current_device_addr_opt {
+                                if let Some(current_device) = detected_devices.get(current_device_addr) {
+                                    // 現在のロケーションも検出されている -> RSSI比較
+                                    if best_dev.rssi > current_device.rssi + 3 {
+                                        if new_sound != current_sound {
+                                             info!(
+                                                current_rssi = current_device.rssi,
+                                                best_rssi = best_dev.rssi,
+                                                new_sound = %new_sound,
+                                                "Switching BGM based on stronger RSSI"
+                                            );
+                                            new_sound
+                                        } else {
+                                            current_sound.clone()
+                                        }
+                                    } else {
+                                        // ヒステリシス条件を満たさないので維持
+                                        current_sound.clone()
+                                    }
                                 } else {
-                                    current_sound.clone() // 同じサウンドなので維持
+                                    // 現在のロケーションが検出されなくなった -> BGMを維持
+                                    debug!(
+                                        current_sound = %current_sound,
+                                        "Current location lost, but keeping BGM as per user requirement"
+                                    );
+                                    current_sound.clone()
                                 }
                             } else {
-                                current_sound.clone() // RSSIが上回らないので維持
+                                // sound_mapに現在のサウンドが存在しない（理論上ほぼ起こらないが）
+                                // 安全のため、デフォルトに戻す
+                                default_sound.clone()
                             }
                         }
                     } else {
