@@ -145,7 +145,7 @@ async fn run_device_service_client(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
-    current_location_type: Arc<Mutex<String>>,
+    current_location_address: Arc<Mutex<Option<String>>>,
 ) {
     info!("Starting DeviceService client...");
 
@@ -171,9 +171,7 @@ async fn run_device_service_client(
     let location_place_types_for_interaction = Arc::clone(&location_place_types);
     let interaction_state_for_task = Arc::clone(&interaction_state);
     let se_tx_for_interaction = se_tx.clone();
-    let latest_rssi_map_for_interaction = Arc::clone(&latest_rssi_map);
-    let sound_map_for_interaction = Arc::clone(&sound_map);
-    let current_location_type_for_interaction = Arc::clone(&current_location_type);
+    let current_location_address_for_interaction = Arc::clone(&current_location_address);
 
     tokio::spawn(async move {
         let mut last_rssi_map: HashMap<String, i16> = HashMap::new();
@@ -183,7 +181,7 @@ async fn run_device_service_client(
                 Ok(device_info) => {
                     // 共有RSSIマップを更新
                     {
-                        let mut rssi_map = latest_rssi_map_for_interaction.lock().unwrap();
+                        let mut rssi_map = latest_rssi_map.lock().unwrap();
                         rssi_map.insert(device_info.address.clone(), device_info.rssi);
                     }
 
@@ -212,19 +210,21 @@ async fn run_device_service_client(
                             // インタラクション可能な場所かチェック
                             if is_interactive_place_type(&place_type) {
                                 // 現在のBGMとインタラクションのロケーションが一致しているかチェック
-                                // current_location_typeはplace_typeのベースタイプを格納している
                                 let is_current_location = {
-                                    let current_location = current_location_type_for_interaction.lock().unwrap();
-                                    let base_type = get_base_location_type_from_place_type(&place_type);
-
-                                    // 現在のロケーションタイプとインタラクションのロケーションタイプが一致しているか
-                                    *current_location == base_type
+                                    let current_addr_opt = current_location_address_for_interaction.lock().unwrap();
+                                    if let Some(current_addr) = &*current_addr_opt {
+                                        // 現在地のアドレスとインタラクションのアドレスが一致するか
+                                        *current_addr == device_info.address
+                                    } else {
+                                        // 現在地がNone（デフォルトBGM）の場合は、どのインタラクションも許可しない
+                                        false
+                                    }
                                 };
 
                                 if !is_current_location {
                                     println!(
-                                        "⚠️  インタラクションスキップ: 現在のBGMと異なるロケーション (Address={}, PlaceType={})",
-                                        device_info.address, place_type
+                                        "⚠️  インタラクションスキップ: 現在のBGMの場所と異なります (Interaction at {}, current BGM is at {:?})",
+                                        device_info.address, *current_location_address_for_interaction.lock().unwrap()
                                     );
                                     last_rssi_map.insert(device_info.address.clone(), current_rssi);
                                     continue;
@@ -371,22 +371,6 @@ async fn run_device_service_client(
                                     }
 
                                     info!(new_sound_map_size = sound_map.len(), ?sound_map, "Updated sound_map with differential update");
-
-                                    // current_location_type を更新
-                                    // 共有されている最新のRSSI情報を使って、最も近いロケーションを判断する
-                                    let rssi_map = latest_rssi_map.lock().unwrap();
-                                    let closest_location = location_update.locations.iter()
-                                        .max_by_key(|loc| rssi_map.get(&loc.address).copied().unwrap_or(i16::MIN));
-
-                                    let mut current_location_type_guard = current_location_type.lock().unwrap();
-                                    if let Some(closest_location) = closest_location {
-                                        let base_type = get_base_location_type_from_place_type(&closest_location.place_type);
-                                        if *current_location_type_guard != base_type {
-                                            current_location_type_guard.clear();
-                                            current_location_type_guard.push_str(base_type);
-                                            info!(place_type = %closest_location.place_type, base_type = %base_type, rssi = %rssi_map.get(&closest_location.address).copied().unwrap_or(i16::MIN), "Updated current_location_type based on strongest RSSI");
-                                        }
-                                    }
                                 }
                                 Event::PointUpdate(point_update) => {
                                     debug!(?point_update, "PointUpdate received");
@@ -594,7 +578,7 @@ pub async fn connect_main(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
-    current_location_type: Arc<Mutex<String>>,
+    current_location_address: Arc<Mutex<Option<String>>>,
 ) -> anyhow::Result<()> {
     let server_addr = "http://34.85.68.246:50051";
     info!("Connecting to gRPC server at {}", server_addr);
@@ -620,7 +604,7 @@ pub async fn connect_main(
                     let sound_map_clone = Arc::clone(&sound_map);
                     let my_address_clone = Arc::clone(&my_address);
                     let current_points_clone = Arc::clone(&current_points);
-                    let current_location_type_clone = Arc::clone(&current_location_type);
+                    let current_location_address_clone = Arc::clone(&current_location_address);
                     let sound_setting_tx_clone = sound_setting_tx.clone();
                     let se_tx_clone = se_tx.clone();
                     let system_enabled_tx_clone = system_enabled_tx.clone();
@@ -634,7 +618,7 @@ pub async fn connect_main(
                         sound_map_clone,
                         my_address_clone,
                         current_points_clone,
-                        current_location_type_clone,
+                        current_location_address_clone,
                     ))
                 };
                 let time_service_handle =

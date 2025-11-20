@@ -197,6 +197,7 @@ pub fn audio_main(
     sound_map: Arc<Mutex<HashMap<String, String>>>,
     my_address: Arc<Mutex<Option<String>>>,
     current_points: Arc<Mutex<i32>>,
+    current_location_address: Arc<Mutex<Option<String>>>,
 ) -> Result<()> {
     info!("Audio system main loop started.");
 
@@ -259,10 +260,6 @@ pub fn audio_main(
     let mut cached_duration_ns: Option<u64> = None;
     let mut last_duration_query = Instant::now();
     const DURATION_QUERY_INTERVAL: Duration = Duration::from_secs(1);
-
-    // 現在のロケーションが検出されなくなった時刻を記録
-    let mut current_location_lost_time: Option<Instant> = None;
-    const LOCATION_LOST_GRACE_PERIOD: Duration = Duration::from_secs(3);
 
     'main_loop: loop {
         // システム有効化状態のチェック
@@ -726,6 +723,28 @@ pub fn audio_main(
                         default_sound.clone()
                     }
                 };
+
+                // 共有されている現在のロケーションアドレスを更新
+                {
+                    let mut current_addr = current_location_address.lock().unwrap();
+                    if desired_sound == default_sound {
+                        if current_addr.is_some() {
+                            info!("Updating current location address to None (default)");
+                            *current_addr = None;
+                        }
+                    } else {
+                        let sound_map_guard = sound_map.lock().unwrap();
+                        let new_addr = sound_map_guard.iter()
+                            .find(|(_, sound_file)| **sound_file == desired_sound)
+                            .map(|(addr, _)| addr.clone());
+
+                        if *current_addr != new_addr {
+                            info!(?new_addr, "Updating current location address");
+                            *current_addr = new_addr;
+                        }
+                    }
+                }
+
 
                 // 非同期切り替えの完了チェック
                 if let Ok(new_pipeline) = switch_rx.try_recv() {

@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
     );
     let sound_map = Arc::new(Mutex::new(sound_map));
     let current_points = Arc::new(Mutex::new(0_i32));
-    let current_location_type = Arc::new(Mutex::new(String::from("main")));
+    let current_location_address = Arc::new(Mutex::new(None::<String>));
     let my_address = Arc::new(Mutex::new(None::<String>));
     let time_offset = Arc::new(Mutex::new(0_i64)); // 時刻オフセット
 
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
-        let current_location_type_clone = Arc::clone(&current_location_type);
+        let current_location_address_clone = Arc::clone(&current_location_address);
         let sound_setting_tx_clone = sound_setting_tx.clone();
         let se_tx_clone = se_tx.clone();
         let system_enabled_tx_clone = system_enabled_tx.clone();
@@ -188,7 +188,7 @@ async fn main() -> Result<()> {
         tokio::spawn(
             async move {
                 if let Err(e) =
-                    connect_main(grpc_rx, time_offset_clone, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone, current_location_type_clone).await
+                    connect_main(grpc_rx, time_offset_clone, sound_setting_tx_clone, se_tx_clone, system_enabled_tx_clone, sound_map_clone, my_address_clone, current_points_clone, current_location_address_clone).await
                 {
                     error!("Connect server error: {}", e);
                 }
@@ -205,10 +205,11 @@ async fn main() -> Result<()> {
         let sound_map_clone = Arc::clone(&sound_map);
         let my_address_clone = Arc::clone(&my_address);
         let current_points_clone = Arc::clone(&current_points);
+        let current_location_address_clone = Arc::clone(&current_location_address);
         let time_offset_clone = Arc::clone(&time_offset);
         tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!("audio_playback_task").entered();
-            audio_main(audio_rx, time_offset_clone, sound_setting_rx, se_rx, audio_system_enabled_rx, sound_map_clone, my_address_clone, current_points_clone)
+            audio_main(audio_rx, time_offset_clone, sound_setting_rx, se_rx, audio_system_enabled_rx, sound_map_clone, my_address_clone, current_points_clone, current_location_address_clone)
         })
     };
 
