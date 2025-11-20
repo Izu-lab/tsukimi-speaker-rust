@@ -260,6 +260,7 @@ pub fn audio_main(
     let mut cached_duration_ns: Option<u64> = None;
     let mut last_duration_query = Instant::now();
     const DURATION_QUERY_INTERVAL: Duration = Duration::from_secs(1);
+    const MAINTAIN_THRESHOLD_RSSI: i16 = -80; // 現在の場所にいると判断し続けるための最低RSSI
 
     'main_loop: loop {
         // システム有効化状態のチェック
@@ -608,21 +609,37 @@ pub fn audio_main(
 
                     // 検知されているLocationとそのRSSIを表示（環境変数に関係なく常に表示）
                     let sound_map_guard = sound_map.lock().unwrap();
-                    let mut detected_locations: Vec<(String, String, i16)> = detected_devices.iter()
-                        .filter_map(|(addr, device)| {
-                            sound_map_guard.get(addr).map(|sound_file| {
-                                (addr.clone(), sound_file.clone(), device.rssi)
-                            })
-                        })
-                        .collect();
+                    let mut all_locations_info: Vec<(String, String, Option<i16>)> = Vec::new();
 
-                    detected_locations.sort_by(|a, b| b.2.cmp(&a.2)); // RSSIの降順でソート
-                    println!("📍 検知中のLocation数: {}", detected_locations.len());
-
-                    if !detected_locations.is_empty() {
-                        for (addr, sound, rssi) in detected_locations {
-                            println!("  └─ Location: {} | Sound: {} | RSSI: {} dBm", addr, sound, rssi);
+                    for (addr, sound_file) in sound_map_guard.iter() {
+                        if let Some(device) = detected_devices.get(addr) {
+                            all_locations_info.push((addr.clone(), sound_file.clone(), Some(device.rssi)));
+                        } else {
+                            all_locations_info.push((addr.clone(), sound_file.clone(), None));
                         }
+                    }
+
+                    all_locations_info.sort_by(|a, b| {
+                        // RSSIがある場合は降順、ない場合は後ろに
+                        match (a.2, b.2) {
+                            (Some(rssi_a), Some(rssi_b)) => rssi_b.cmp(&rssi_a),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => a.0.cmp(&b.0), // RSSIがない場合はアドレスでソート
+                        }
+                    });
+
+                    println!("📍 ロケーションの状態:");
+
+                    if !all_locations_info.is_empty() {
+                        for (addr, sound, rssi_opt) in all_locations_info {
+                            match rssi_opt {
+                                Some(rssi) => println!("  └─ Location: {} | Sound: {} | RSSI: {} dBm", addr, sound, rssi),
+                                None => println!("  └─ Location: {} | Sound: {} | RSSI: (検知なし)", addr, sound),
+                            }
+                        }
+                    } else {
+                        println!("  (登録されたロケーションは現在ありません)");
                     }
                 }
 
@@ -659,68 +676,64 @@ pub fn audio_main(
                 let desired_sound = {
                     let sound_map_guard = sound_map.lock().unwrap();
 
-                    // 1. 最もRSSIが強いデバイス（ベストロケーション）を見つける
-                    let best_location = detected_devices.values()
+                    // 1. 現在の場所の情報を取得
+                    let (current_device_addr, current_device_rssi) = {
+                        let addr = sound_map_guard.iter()
+                            .find(|(_, sound_file)| **sound_file == current_sound)
+                            .map(|(addr, _)| addr.clone());
+                        if let Some(addr) = addr {
+                            let rssi = detected_devices.get(&addr).map_or(i16::MIN, |d| d.rssi);
+                            (Some(addr), rssi)
+                        } else {
+                            (None, i16::MIN)
+                        }
+                    };
+
+                    // 2. 最も強い「他の」場所を探す
+                    let best_alternative_location = detected_devices.values()
+                        .filter(|d| Some(d.address.as_str()) != current_device_addr.as_deref())
                         .filter(|d| sound_map_guard.contains_key(&d.address))
                         .max_by_key(|d| d.rssi);
 
-                    if let Some(best_dev) = best_location {
-                        let new_sound = sound_map_guard.get(&best_dev.address).unwrap().clone();
-
-                        // 2. 現在のBGMがデフォルト音源か？
-                        if current_sound == default_sound {
-                            // デフォルト音源からは常に切り替えを試みる
-                            info!(
-                                from = %current_sound,
-                                to = %new_sound,
-                                reason = "Current BGM is default, switching to best location",
-                                best_rssi = best_dev.rssi,
-                                "Switching BGM"
-                            );
-                            new_sound
+                    // 3. 状態に応じてBGMを決定
+                    if current_sound == default_sound {
+                        // ケース1: 現在がデフォルトBGMの場合
+                        if let Some(best_dev) = detected_devices.values()
+                            .filter(|d| sound_map_guard.contains_key(&d.address))
+                            .max_by_key(|d| d.rssi)
+                        {
+                            sound_map_guard.get(&best_dev.address).unwrap().clone() // 最も強い場所に切り替え
                         } else {
-                            // 3. 現在のBGMがデフォルトでない場合
-                            // 現在のロケーションが検出されているか確認
-                            let current_device_addr_opt = sound_map_guard.iter()
-                                .find(|(_, sound_file)| **sound_file == current_sound)
-                                .map(|(addr, _)| addr);
-
-                            if let Some(current_device_addr) = current_device_addr_opt {
-                                if let Some(current_device) = detected_devices.get(current_device_addr) {
-                                    // 現在のロケーションも検出されている -> RSSI比較
-                                    if best_dev.rssi > current_device.rssi + 3 {
-                                        if new_sound != current_sound {
-                                             info!(
-                                                current_rssi = current_device.rssi,
-                                                best_rssi = best_dev.rssi,
-                                                new_sound = %new_sound,
-                                                "Switching BGM based on stronger RSSI"
-                                            );
-                                            new_sound
-                                        } else {
-                                            current_sound.clone()
-                                        }
-                                    } else {
-                                        // ヒステリシス条件を満たさないので維持
-                                        current_sound.clone()
-                                    }
+                            default_sound.clone() // 維持
+                        }
+                    } else {
+                        // ケース2: 特定の場所のBGMを再生中の場合
+                        if current_device_rssi >= MAINTAIN_THRESHOLD_RSSI {
+                            // サブケース2a: 現在の場所を検知できており、RSSIも十分
+                            if let Some(best_alternative) = best_alternative_location {
+                                if best_alternative.rssi > current_device_rssi + 3 {
+                                    sound_map_guard.get(&best_alternative.address).unwrap().clone() // 切り替え
                                 } else {
-                                    // 現在のロケーションが検出されなくなった -> BGMを維持
-                                    debug!(
-                                        current_sound = %current_sound,
-                                        "Current location lost, but keeping BGM as per user requirement"
-                                    );
-                                    current_sound.clone()
+                                    current_sound.clone() // 維持
                                 }
                             } else {
-                                // sound_mapに現在のサウンドが存在しない（理論上ほぼ起こらないが）
-                                // 安全のため、デフォルトに戻す
+                                current_sound.clone() // 維持
+                            }
+                        } else {
+                            // サブケース2b: 現在の場所のRSSIが弱い、またはロストした
+                            if let Some(best_alternative) = best_alternative_location {
+                                // 他に切り替えるべき場所が存在するので、そちらに切り替える
+                                sound_map_guard.get(&best_alternative.address).unwrap().clone()
+                            } else {
+                                // 他に有力な場所が全くないので、デフォルトに戻す
+                                info!(
+                                    current_sound = %current_sound,
+                                    current_rssi = current_device_rssi,
+                                    "Current location RSSI is below threshold and no alternatives found. Falling back to default.",
+                                );
                                 default_sound.clone()
                             }
                         }
-                    } else {
-                        // sound_mapに登録されているデバイスが1つも検知されなかった場合、デフォルトに戻す
-                        default_sound.clone()
                     }
                 };
 
