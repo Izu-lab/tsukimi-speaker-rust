@@ -514,6 +514,12 @@ pub fn audio_main(
                     }
                     // SE再生中フラグをリセット
                     is_se_playing = false;
+
+                    // BGMの音量を元に戻す
+                    if let Some(ref act) = active {
+                        set_volume(&act.volume, 1.0);
+                        info!("🔊 BGM音量を1.0に復元しました（SE再生完了）");
+                    }
                 }
             }
         }
@@ -725,13 +731,23 @@ pub fn audio_main(
                                 // 他に切り替えるべき場所が存在するので、そちらに切り替える
                                 sound_map_guard.get(&best_alternative.address).unwrap().clone()
                             } else {
-                                // 他に有力な場所が全くないので、デフォルトに戻す
-                                info!(
-                                    current_sound = %current_sound,
-                                    current_rssi = current_device_rssi,
-                                    "Current location RSSI is below threshold and no alternatives found. Falling back to default.",
-                                );
-                                default_sound.clone()
+                                // 代替がない場合のフォールバック処理
+                                if current_device_rssi == i16::MIN {
+                                    // ケース2b-1: 現在の場所が完全にロストした -> 維持
+                                    info!(
+                                        "Current location ('{}') lost and no alternatives found. Maintaining current sound.",
+                                        current_sound
+                                    );
+                                    current_sound.clone()
+                                } else {
+                                    // ケース2b-2: RSSIが閾値以下になった -> デフォルトに戻す
+                                    info!(
+                                        current_sound = %current_sound,
+                                        current_rssi = current_device_rssi,
+                                        "Current location RSSI is below threshold and no alternatives found. Falling back to default.",
+                                    );
+                                    default_sound.clone()
+                                }
                             }
                         }
                     }
