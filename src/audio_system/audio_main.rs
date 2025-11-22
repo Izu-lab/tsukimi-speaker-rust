@@ -19,7 +19,7 @@ pub struct SePlayRequest {
 // 音源切り替えリクエスト
 struct SwitchRequest {
     desired_sound: String,
-    seek_position_ns: u64,
+    server_time_ns: u64,
 }
 
 // 再生状態を管理するためのenum
@@ -249,17 +249,16 @@ pub fn audio_main(
     let mut last_switch_end: Option<Instant> = None;
     const SWITCH_GUARD_WINDOW: Duration = Duration::from_millis(400);
 
-    // 独自のシーク位置管理
-    let mut current_seek_position_ns: u64 = 0;
-    let mut last_position_update = Instant::now();
+
+
 
     let sync_wait_start = Instant::now();
     const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 
     // 最適化: durationのキャッシュ
-    let mut cached_duration_ns: Option<u64> = None;
-    let mut last_duration_query = Instant::now();
-    const DURATION_QUERY_INTERVAL: Duration = Duration::from_secs(1);
+
+
+
     const MAINTAIN_THRESHOLD_RSSI: i16 = -80; // 現在の場所にいると判断し続けるための最低RSSI
 
     'main_loop: loop {
@@ -536,15 +535,11 @@ pub fn audio_main(
                     set_volume(&act.volume, 1.0);
                     let _ = act.pipeline.set_state(gst::State::Playing);
 
-                    // durationをキャッシュ
-                    if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                        cached_duration_ns = Some(duration.nseconds());
-                        current_seek_position_ns = server_time_ns % duration.nseconds();
-                    }
+
 
                     active = Some(act);
-                    last_position_update = Instant::now();
-                    last_duration_query = Instant::now();
+
+
 
                     playback_start_time = Instant::now();
                     initial_server_time_ns = server_time_ns;
@@ -555,15 +550,13 @@ pub fn audio_main(
                     let _ = act.pipeline.set_state(gst::State::Playing);
                     set_volume(&act.volume, 1.0);
 
-                    if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                        cached_duration_ns = Some(duration.nseconds());
-                    }
+
 
                     active = Some(act);
 
-                    current_seek_position_ns = 0;
-                    last_position_update = Instant::now();
-                    last_duration_query = Instant::now();
+
+
+
 
                     playback_start_time = Instant::now();
                     initial_server_time_ns = 0;
@@ -571,29 +564,16 @@ pub fn audio_main(
                 }
             }
             PlaybackState::Playing => {
-                // 独自シーク位置を経過時間で更新
-                let elapsed_since_update = last_position_update.elapsed();
-                current_seek_position_ns += elapsed_since_update.as_nanos() as u64;
-                last_position_update = Instant::now();
-
-                // durationのクエリを削減：1秒に1回のみ
-                if Instant::now().duration_since(last_duration_query) > DURATION_QUERY_INTERVAL {
-                    if let Some(ref act) = active {
-                        if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                            if duration.nseconds() > 0 {
-                                cached_duration_ns = Some(duration.nseconds());
-                            }
-                        }
-                    }
-                    last_duration_query = Instant::now();
-                }
-
-                // キャッシュされたdurationでループ
-                if let Some(duration_ns) = cached_duration_ns {
-                    if duration_ns > 0 {
-                        current_seek_position_ns %= duration_ns;
+                // 現在の再生位置をログ出力
+                if let Some(ref act) = active {
+                    if let Some(pos) = act.pipeline.query_position::<gst::ClockTime>() {
+                        debug!("現在の再生位置: {} ns", pos.nseconds());
                     }
                 }
+
+
+
+
 
                 // 設定更新
                 if let Ok(new_setting) = sound_setting_rx.try_recv() {
@@ -610,8 +590,23 @@ pub fn audio_main(
                     if initial_count != detected_devices.len() { debug!("Cleaned up old devices."); }
                     last_cleanup = Instant::now();
 
-                    // 現在再生中のBGMを表示
-                    println!("🎵 現在のBGM: {}", current_sound);
+                    // 現在再生中のBGMと再生位置を表示
+                    print!("🎵 現在のBGM: {}", current_sound);
+                    if let Some(ref act) = active {
+                        if let (Some(pos), Some(dur)) = (act.pipeline.query_position::<gst::ClockTime>(), act.pipeline.query_duration::<gst::ClockTime>()) {
+                            let dur_ms = dur.mseconds();
+                            if dur_ms > 0 {
+                                let pos_ms = pos.mseconds();
+                                let percent = (pos_ms as f64 / dur_ms as f64) * 100.0;
+                                print!(" ({:.1}%)", percent);
+                            } else {
+                                print!(" (再生位置: {}ms)", pos.mseconds());
+                            }
+                        } else if let Some(pos) = act.pipeline.query_position::<gst::ClockTime>() {
+                             print!(" (再生位置: {}ms)", pos.mseconds());
+                        }
+                    }
+                    println!();
 
                     // 検知されているLocationとそのRSSIを表示（環境変数に関係なく常に表示）
                     let sound_map_guard = sound_map.lock().unwrap();
@@ -657,23 +652,19 @@ pub fn audio_main(
                         let server_elapsed = (server_time_ns - initial_server_time_ns) as i64;
                         let client_elapsed = playback_start_time.elapsed().as_nanos() as i64;
                         let diff_real_ns = server_elapsed - client_elapsed;
-                        let diff_abs_s = (diff_real_ns.abs() as f64) / 1e9;
-                        let new_rate: f64 = if diff_abs_s > 3.0 {
-                            warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected (>3s), seeking active.");
-                            let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
-                            // 独自シーク位置も更新、キャッシュされたdurationを使用
-                            if let Some(duration_ns) = cached_duration_ns {
-                                if duration_ns > 0 {
-                                    current_seek_position_ns = server_time_ns % duration_ns;
-                                }
-                            }
-                            1.0
-                        } else {
-                            let diff_s = diff_real_ns as f64 / 1e9;
-                            const CORRECTION_TIME_S: f64 = 2.0;
-                            (1.0 + diff_s / CORRECTION_TIME_S).clamp(0.9, 1.1)
-                        };
-                        if let Some(ref p) = act.pitch { p.set_property("tempo", new_rate as f32); }
+                                                let diff_abs_s = (diff_real_ns.abs() as f64) / 1e9;
+                                                debug!(diff_ns = diff_real_ns, "Drift detected");
+                                                let new_rate: f64 = if diff_abs_s > 3.0 {
+                                                    warn!(diff_s = diff_real_ns as f64 / 1e9, "Large drift detected (>3s), seeking active.");
+                                                    let _ = seek_to_server_time(&act.pipeline, &act.bus, server_time_ns);
+                                                    1.0
+                                                } else {
+                                                    let diff_s = diff_real_ns as f64 / 1e9;
+                                                    const CORRECTION_TIME_S: f64 = 2.0;
+                                                    (1.0 + diff_s / CORRECTION_TIME_S).clamp(0.9, 1.1)
+                                                };
+                                                debug!(rate = new_rate, "Calculated new playback rate");
+                                                if let Some(ref p) = act.pitch { p.set_property("tempo", new_rate as f32); }
                         playback_start_time = Instant::now();
                         initial_server_time_ns = server_time_ns;
                     }
@@ -797,16 +788,11 @@ pub fn audio_main(
                     // 新しいパイプラインをアクティブに設定
                     active = Some(new_pipeline);
 
-                    // durationキャッシュを更新
-                    if let Some(ref act) = active {
-                        if let Some(duration) = act.pipeline.query_duration::<gst::ClockTime>() {
-                            cached_duration_ns = Some(duration.nseconds());
-                        }
-                    }
+
 
                     // 同期を再設定
-                    last_position_update = Instant::now();
-                    last_duration_query = Instant::now();
+
+
                     playback_start_time = Instant::now();
                     if let Some(t) = last_server_time_ns {
                         initial_server_time_ns = t;
@@ -835,53 +821,54 @@ pub fn audio_main(
                     }
 
                     // 非同期切り替えリクエストを送信
-                    let request = SwitchRequest {
-                        desired_sound: desired_sound.clone(),
-                        seek_position_ns: current_seek_position_ns,
-                    };
+                    if let Some(server_time) = last_server_time_ns {
+                        let request = SwitchRequest {
+                            desired_sound: desired_sound.clone(),
+                            server_time_ns: server_time,
+                        };
 
-                    let switch_tx_clone = switch_tx.clone();
+                        let switch_tx_clone = switch_tx.clone();
 
-                    // 別スレッドで切り替え処理を実行
-                    std::thread::spawn(move || {
-                        info!("📦 非同期で新しいパイプラインを構築中...");
+                        // 別スレッドで切り替え処理を実行
+                        std::thread::spawn(move || {
+                            info!("📦 非同期で新しいパイプラインを構築中...");
 
-                        match build_pipeline(&request.desired_sound) {
-                            Ok(next) => {
-                                set_volume(&next.volume, 1.0);
-                                if let Some(ref p) = next.pitch {
-                                    p.set_property("tempo", 1.0f32);
+                            match build_pipeline(&request.desired_sound) {
+                                Ok(next) => {
+                                    set_volume(&next.volume, 1.0);
+                                    if let Some(ref p) = next.pitch {
+                                        p.set_property("tempo", 1.0f32);
+                                    }
+
+                                    info!("⏸️  Paused状態でサーバー時間 {} ns に基づいてシーク", request.server_time_ns);
+                                    let _ = next.pipeline.set_state(gst::State::Paused);
+                                    wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(3), "async_switch_pause");
+
+                                    // seek_to_server_time を使って正しい位置にシーク
+                                    if let Err(e) = seek_to_server_time(&next.pipeline, &next.bus, request.server_time_ns) {
+                                        error!("Failed to seek to server time during switch: {}", e);
+                                    }
+                                    info!("✓ シーク完了");
+
+
+                                    // 🔥 重要：Paused状態のままメインスレッドに送信
+                                    // メインスレッドで古いパイプラインを停止してからPlayingに切り替える
+                                    info!("⏸️  パイプラインをPaused状態で準備完了、メインスレッドに送信");
+
+                                    // 完成したパイプラインをメインスレッドに送信（Paused状態のまま）
+                                    if let Err(e) = switch_tx_clone.blocking_send(next) {
+                                        error!("Failed to send new pipeline: {}", e);
+                                    }
                                 }
-
-                                info!("⏸️  Paused状態で独自シーク位置 {} ns にシーク", request.seek_position_ns);
-                                let _ = next.pipeline.set_state(gst::State::Paused);
-                                wait_for_state(&next.pipeline, gst::State::Paused, Duration::from_secs(3), "async_switch_pause");
-
-                                let seek_position = gst::ClockTime::from_nseconds(request.seek_position_ns);
-                                let _ = next.pipeline.seek_simple(
-                                    gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
-                                    seek_position
-                                );
-                                let _ = next.bus.timed_pop_filtered(
-                                    Some(gst::ClockTime::from_mseconds(500)),
-                                    &[gst::MessageType::AsyncDone]
-                                );
-                                info!("✓ シーク完了");
-
-                                // 🔥 重要：Paused状態のままメインスレッドに送信
-                                // メインスレッドで古いパイプラインを停止してからPlayingに切り替える
-                                info!("⏸️  パイプラインをPaused状態で準備完了、メインスレッドに送信");
-
-                                // 完成したパイプラインをメインスレッドに送信（Paused状態のまま）
-                                if let Err(e) = switch_tx_clone.blocking_send(next) {
-                                    error!("Failed to send new pipeline: {}", e);
+                                Err(e) => {
+                                    error!("Failed to build pipeline: {}", e);
                                 }
                             }
-                            Err(e) => {
-                                error!("Failed to build pipeline: {}", e);
-                            }
-                        }
-                    });
+                        });
+                    } else {
+                        warn!("Cannot switch sound: server time is not available.");
+                        switching = false; // switchingフラグをリセット
+                    }
                 }
             }
         }
