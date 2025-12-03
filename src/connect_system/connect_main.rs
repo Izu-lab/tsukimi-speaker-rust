@@ -155,7 +155,7 @@ async fn run_device_service_client(
     // ロケーション情報のキャッシュ（address -> place_type）
     let location_place_types = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
-    const INTERACTION_RSSI_THRESHOLD: i16 = -40;
+    const INTERACTION_RSSI_THRESHOLD: i16 = -35;
 
     // ポイント初期化フラグ（起動直後の初回更新でSEを鳴らさないため）
     let points_initialized = Arc::new(Mutex::new(false));

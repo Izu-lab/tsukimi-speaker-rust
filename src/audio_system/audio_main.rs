@@ -5,10 +5,13 @@ use glib::object::ObjectExt;
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, instrument, warn};
+use chrono::Local;
 
 // SE再生リクエスト
 #[derive(Debug, Clone)]
@@ -223,6 +226,8 @@ pub fn audio_main(
     let mut detected_devices: HashMap<String, Arc<DeviceInfo>> = HashMap::new();
     let mut last_cleanup = Instant::now();
     const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
+    let mut last_log_time = Instant::now();
+    const LOG_INTERVAL: Duration = Duration::from_secs(1);
 
     // アクティブ/インアクティブの2系統を保持
     let mut active: Option<PipelineState> = None;
@@ -259,7 +264,7 @@ pub fn audio_main(
 
 
 
-    const MAINTAIN_THRESHOLD_RSSI: i16 = -80; // 現在の場所にいると判断し続けるための最低RSSI
+    const MAINTAIN_THRESHOLD_RSSI: i16 = -75; // 現在の場所にいると判断し続けるための最低RSSI
 
     'main_loop: loop {
         // システム有効化状態のチェック
@@ -743,6 +748,40 @@ pub fn audio_main(
                         }
                     }
                 };
+
+                // --- ログ出力 ---
+                if last_log_time.elapsed() >= LOG_INTERVAL {
+                    let sound_map_guard = sound_map.lock().unwrap();
+                    let target_addr = sound_map_guard.iter()
+                        .find(|(_, sound)| **sound == desired_sound)
+                        .map(|(addr, _)| addr.clone());
+
+                    let rssi = if let Some(ref addr) = target_addr {
+                        detected_devices.get(addr).map(|d| d.rssi)
+                    } else {
+                        None
+                    };
+
+                    // 時刻取得 (人間可読形式)
+                    let timestamp_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+                    // CSV書き込み: timestamp, bgm, address, rssi
+                    if let Ok(mut file) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open("rssi_log.csv")
+                    {
+                        let addr_str = target_addr.unwrap_or_else(|| "none".to_string());
+                        let rssi_str = rssi.map(|r| r.to_string()).unwrap_or_else(|| "".to_string());
+                        if let Err(e) = writeln!(file, "{},{},{},{}", timestamp_str, desired_sound, addr_str, rssi_str) {
+                             error!("Failed to write to log file: {}", e);
+                        }
+                    } else {
+                         error!("Failed to open log file rssi_log.csv");
+                    }
+                    last_log_time = Instant::now();
+                }
+                // ----------------
 
                 // 共有されている現在のロケーションアドレスを更新
                 {
