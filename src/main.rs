@@ -76,10 +76,11 @@ async fn main() -> Result<()> {
     // --- sound_mapの作成 ---
     let mut sound_map = HashMap::new();
     // TODO: ご自身の環境に合わせて、Bluetoothアドレスとサウンドファイル名を変更してください。
-    sound_map.insert(
-        "00:11:22:33:44:55".to_string(),
-        "tsukimi-main_1.mp3".to_string(),
-    );
+    sound_map.insert("00:11:22:33:44:51".to_string(), "sin_100.wav".to_string());
+    sound_map.insert("00:11:22:33:44:52".to_string(), "sin_200.wav".to_string());
+    sound_map.insert("00:11:22:33:44:53".to_string(), "sin_300.wav".to_string());
+    sound_map.insert("00:11:22:33:44:54".to_string(), "sin_400.wav".to_string());
+    sound_map.insert("00:11:22:33:44:55".to_string(), "sin_500.wav".to_string());
     let sound_map = Arc::new(Mutex::new(sound_map));
     let current_points = Arc::new(Mutex::new(0_i32));
     let current_location_address = Arc::new(Mutex::new(None::<String>));
