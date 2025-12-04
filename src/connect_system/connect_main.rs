@@ -81,12 +81,12 @@ fn get_sound_file_from_place_type_and_points(place_type: &str, points: i32) -> S
 
 fn get_sine_sound_file_from_place_type(place_type: &str, points: i32) -> String {
     match place_type {
-        "fire_rat_robe" => "sin_100.wav".to_string(),
-        "buddhas_bowl" => "sin_200.wav".to_string(),
-        "jeweled_branch" => "sin_300.wav".to_string(),
-        "dragons_jewel" => "sin_400.wav".to_string(),
-        "swallows_cowry" => "sin_500.wav".to_string(),
-        _ => "sin_100.wav".to_string(),
+        "fire_rat_robe" => "sin_500.wav".to_string(),
+        "buddhas_bowl" => "sin_1000.wav".to_string(),
+        "jeweled_branch" => "sin_1500.wav".to_string(),
+        "dragons_jewel" => "sin_2000.wav".to_string(),
+        "swallows_cowry" => "sin_2500.wav".to_string(),
+        _ => "sin_500.wav".to_string(),
     }
 }
 

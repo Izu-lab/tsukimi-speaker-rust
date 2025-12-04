@@ -221,7 +221,7 @@ pub fn audio_main(
 
     // 準備
     let mut playback_state = PlaybackState::WaitingForFirstSync;
-    let default_sound = "tsukimi-main_1.mp3".to_string();
+    let default_sound = "sin_4000.wav".to_string();
     let mut current_sound: String = default_sound.clone();
     let mut detected_devices: HashMap<String, Arc<DeviceInfo>> = HashMap::new();
     let mut last_cleanup = Instant::now();
