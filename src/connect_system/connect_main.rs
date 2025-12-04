@@ -79,6 +79,17 @@ fn get_sound_file_from_place_type_and_points(place_type: &str, points: i32) -> S
     format!("tsukimi-{}_{}.mp3", base_type, effective_points)
 }
 
+fn get_sine_sound_file_from_place_type(place_type: &str, points: i32) -> String {
+    match place_type {
+        "fire_rat_robe" => "sin_100.wav".to_string(),
+        "buddhas_bowl" => "sin_200.wav".to_string(),
+        "jeweled_branch" => "sin_300.wav".to_string(),
+        "dragons_jewel" => "sin_400.wav".to_string(),
+        "swallows_cowry" => "sin_500.wav".to_string(),
+        _ => "sin_100.wav".to_string(),
+    }
+}
+
 /// place_typeに基づいてSEファイル名を決定する
 fn get_se_file_from_place_type(place_type: &str) -> Option<&'static str> {
     match place_type {
@@ -343,7 +354,7 @@ async fn run_device_service_client(
                                     for loc in &location_update.locations {
                                         new_addresses.insert(loc.address.clone());
                                         // ポイント数に応じたサウンドファイル名を生成
-                                        let sound_file = get_sound_file_from_place_type_and_points(&loc.place_type, points);
+                                        let sound_file = get_sine_sound_file_from_place_type(&loc.place_type, points);
 
                                         // place_typeをキャッシュ（インタラクション検知用）
                                         {
@@ -400,7 +411,7 @@ async fn run_device_service_client(
                                                 // sound_map のキー（アドレス）はそのままに、値（サウンドファイル名）だけを更新
                                                 for (addr, sound_file) in sound_map_guard.iter_mut() {
                                                     if let Some(place_type) = location_types_guard.get(addr) {
-                                                        *sound_file = get_sound_file_from_place_type_and_points(place_type, new_points);
+                                                        *sound_file = get_sine_sound_file_from_place_type(place_type, new_points);
                                                     }
                                                 }
                                                 info!(?sound_map_guard, "Rebuilt sound_map complete.");
