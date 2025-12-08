@@ -751,29 +751,47 @@ pub fn audio_main(
 
                 // --- ログ出力 ---
                 if last_log_time.elapsed() >= LOG_INTERVAL {
-                    let sound_map_guard = sound_map.lock().unwrap();
-                    let target_addr = sound_map_guard.iter()
-                        .find(|(_, sound)| **sound == desired_sound)
-                        .map(|(addr, _)| addr.clone());
-
-                    let rssi = if let Some(ref addr) = target_addr {
-                        detected_devices.get(addr).map(|d| d.rssi)
-                    } else {
-                        None
-                    };
-
                     // 時刻取得 (人間可読形式)
                     let timestamp_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-                    // CSV書き込み: timestamp, bgm, address, rssi
+                    let sound_map_guard = sound_map.lock().unwrap();
+
+                    // カラム順序を固定するためにソート
+                    // sound_mapは Address -> SoundFile
+                    // Location(SoundFile)でソートしてカラムを作成
+                    let mut locations: Vec<(&String, &String)> = sound_map_guard.iter()
+                        .map(|(addr, sound)| (sound, addr))
+                        .collect();
+                    locations.sort_by(|a, b| a.0.cmp(b.0));
+
                     if let Ok(mut file) = OpenOptions::new()
                         .create(true)
                         .append(true)
                         .open("rssi_log.csv")
                     {
-                        let addr_str = target_addr.unwrap_or_else(|| "none".to_string());
-                        let rssi_str = rssi.map(|r| r.to_string()).unwrap_or_else(|| "".to_string());
-                        if let Err(e) = writeln!(file, "{},{},{},{}", timestamp_str, desired_sound, addr_str, rssi_str) {
+                        // ファイルが空の場合はヘッダーを書き込む
+                        if file.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
+                             let mut header = "timestamp,current_bgm".to_string();
+                             for (sound_name, _) in &locations {
+                                 header.push_str(",");
+                                 header.push_str(sound_name);
+                             }
+                             if let Err(e) = writeln!(file, "{}", header) {
+                                  error!("Failed to write header to log file: {}", e);
+                             }
+                        }
+
+                        // データ行の作成
+                        let mut row = format!("{},{}", timestamp_str, desired_sound);
+                        for (_, addr) in &locations {
+                            let rssi_val = detected_devices.get(*addr)
+                                .map(|d| d.rssi.to_string())
+                                .unwrap_or_else(|| "".to_string());
+                            row.push_str(",");
+                            row.push_str(&rssi_val);
+                        }
+
+                        if let Err(e) = writeln!(file, "{}", row) {
                              error!("Failed to write to log file: {}", e);
                         }
                     } else {
