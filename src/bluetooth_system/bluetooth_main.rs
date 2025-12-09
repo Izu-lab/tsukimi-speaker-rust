@@ -195,7 +195,15 @@ pub async fn bluetooth_scanner(
         if let btleplug::api::CentralEvent::DeviceDiscovered(id)
         | btleplug::api::CentralEvent::DeviceUpdated(id) = event
         {
-            on_event_receive(&central, &id, tx.clone(), Arc::clone(&sound_map), Arc::clone(&device_cache)).await;
+            let central_clone = central.clone();
+            let tx_clone = tx.clone();
+            let sound_map_clone = Arc::clone(&sound_map);
+            let device_cache_clone = Arc::clone(&device_cache);
+            let id_clone = id.clone();
+
+            tokio::spawn(async move {
+                on_event_receive(&central_clone, &id_clone, tx_clone, sound_map_clone, device_cache_clone).await;
+            });
         }
     }
     Ok(())
